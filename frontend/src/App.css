@@ -1,0 +1,1151 @@
+:root {
+  --color-bg: #ffffff;
+  --color-surface: #f9fafb;
+  --color-border: #e5e7eb;
+  --color-text: #111827;
+  --color-text-muted: #6b7280;
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-light: #eff6ff;
+  --radius: 10px;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+h1 {
+  font-size: 1.75rem;
+  margin: 0;
+  font-weight: 700;
+}
+
+h2 {
+  font-size: 1.25rem;
+  margin: 0;
+  font-weight: 600;
+}
+
+h3 {
+  margin: 0 0 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.75rem;
+}
+
+p {
+  margin: 0;
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.capitalize {
+  text-transform: capitalize;
+}
+
+button {
+  font-family: inherit;
+  padding: 0.55rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+button:hover {
+  background: var(--color-primary-hover);
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+
+.btn-secondary:hover {
+  background: var(--color-border);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text-muted);
+  padding: 0.5rem;
+}
+
+.btn-ghost:hover {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* The deal-details drawer trigger gets a standing soft glow so it reads as
+   a distinct, important action rather than just another icon button. */
+.drawer-trigger {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+}
+
+.drawer-trigger:hover {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.18);
+}
+
+input,
+select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  background: white;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: -0.4rem;
+}
+
+.error {
+  color: #dc2626;
+  font-size: 0.85rem;
+}
+
+/* Layout */
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-main {
+  flex: 1;
+  background: var(--color-surface);
+}
+
+/* Navbar */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 2rem;
+  background: white;
+  border-bottom: 1px solid var(--color-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: var(--color-primary);
+}
+
+.navbar-logo {
+  font-size: 1.3rem;
+}
+
+/* Profile dropdown (avatar in the navbar) */
+.profile-menu-wrapper {
+  position: relative;
+}
+
+.profile-trigger {
+  background: transparent;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.profile-trigger:hover {
+  background: transparent;
+  opacity: 0.85;
+}
+
+.profile-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.5rem;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  min-width: 180px;
+  overflow: hidden;
+  z-index: 20;
+}
+
+.profile-menu-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.profile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  background: white;
+  color: var(--color-text);
+  border-radius: 0;
+  font-weight: 500;
+  font-size: 0.85rem;
+  justify-content: flex-start;
+}
+
+.profile-menu-item:hover {
+  background: var(--color-surface);
+}
+
+.role-badge {
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+/* Login page */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%);
+}
+
+.login-card {
+  width: 380px;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 2.5rem;
+}
+
+.login-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--color-primary);
+  margin-bottom: 0.25rem;
+}
+
+.login-brand svg {
+  font-size: 1.6rem;
+}
+
+.login-subtitle {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.login-form button {
+  margin-top: 0.5rem;
+  justify-content: center;
+}
+
+.login-demo {
+  margin-top: 1.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.login-demo > span {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.demo-accounts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.demo-accounts button {
+  font-size: 0.78rem;
+  padding: 0.5rem;
+  justify-content: center;
+}
+
+/* Page */
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1.75rem;
+}
+
+.page-subtitle {
+  color: var(--color-text-muted);
+  margin-top: 0.25rem;
+}
+
+/* Deal dashboard: a vertical stack of horizontal summary bars, one per deal,
+   each showing summary + members + documents + last chat at a glance. */
+.deal-bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.deal-bar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.deal-bar:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.deal-bar-summary {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1.4;
+  min-width: 0;
+}
+
+.deal-bar-summary strong {
+  font-size: 0.95rem;
+}
+
+/* Shared members/documents/last-message sections, used by both layouts below */
+.deal-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--color-text-muted);
+  margin: 0 0 0.4rem;
+  font-weight: 600;
+}
+
+.small {
+  font-size: 0.82rem;
+}
+
+.avatar-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* List (horizontal bar) layout: sections sit side by side with a divider */
+.deal-bar .deal-section {
+  flex: 1;
+  min-width: 0;
+  border-left: 1px solid var(--color-surface);
+  padding-left: 1.5rem;
+}
+
+.deal-bar .deal-section-chat {
+  flex: 1.6;
+}
+
+/* Card (vertical) layout: 3 per row, sections stack with a top divider */
+.deal-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .deal-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .deal-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.deal-card-v {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.deal-card-v:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.deal-card-v-header {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.deal-card-v-header strong {
+  font-size: 1rem;
+}
+
+.deal-card-v .deal-section {
+  border-top: 1px solid var(--color-surface);
+  padding-top: 0.6rem;
+}
+
+/* Layout toggle (burger menu) */
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.view-toggle-btn {
+  background: white;
+  color: var(--color-text-muted);
+  padding: 0.5rem 0.65rem;
+  border-radius: 0;
+}
+
+.view-toggle-btn + .view-toggle-btn {
+  border-left: 1px solid var(--color-border);
+}
+
+.view-toggle-btn:hover {
+  background: var(--color-surface);
+}
+
+.view-toggle-btn.active {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.deal-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.deal-card-meta {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tag {
+  font-size: 0.72rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+}
+
+.status-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  text-transform: capitalize;
+}
+
+.status-open {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.status-closed {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 4rem 2rem;
+  color: var(--color-text-muted);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+  background: white;
+}
+
+.empty-state h3 {
+  color: var(--color-text);
+  text-transform: none;
+  font-size: 1.05rem;
+  letter-spacing: 0;
+}
+
+.empty-state button {
+  margin-top: 0.75rem;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  width: 420px;
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-body {
+  padding: 1.5rem;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.modal-form button {
+  margin-top: 0.75rem;
+  justify-content: center;
+}
+
+/* Deal room */
+.deal-room-page-v2 {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.deal-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 2rem;
+  background: white;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.deal-top-bar-main {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.deal-top-bar-main h1 {
+  font-size: 1rem;
+}
+
+.deal-room-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+/* icon-rail sits outside deal-room-body-v2's own padding/max-width/centering
+   so it can span full height flush against the actual window edge, not just
+   float as another card inside the centered content area. */
+.deal-room-layout {
+  display: flex;
+  height: calc(100vh - 110px);
+}
+
+.icon-rail {
+  width: 56px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  background: #e5e7eb;
+  border-right: 1px solid var(--color-border);
+}
+
+.icon-rail-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--color-text-muted);
+  border-radius: 8px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.icon-rail-btn:hover {
+  background: white;
+  color: var(--color-text);
+}
+
+.icon-rail-btn.active {
+  background: white;
+  color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
+/* Grid tracks: doc explorer (0 = collapsed, 250px = open) | preview | chat.
+   Keeping the doc-explorer track always present (just 0-width when closed)
+   instead of conditionally rendering it is what makes the collapse animate
+   smoothly — grid-template-columns transitions cleanly when the track COUNT
+   stays the same and only a track's size changes. */
+.deal-room-body-v2 {
+  position: relative;
+  display: grid;
+  grid-template-columns: 0 1fr 380px;
+  transition: grid-template-columns 0.2s ease;
+  gap: 1.5rem;
+  padding: 1.5rem 2rem;
+  max-width: 1480px;
+  margin: 0 auto;
+  width: 100%;
+  height: 100%;
+}
+
+.deal-room-body-v2.with-doc-panel {
+  grid-template-columns: 250px 1fr 380px;
+}
+
+/* The dropzone's hidden file input is a direct child of the grid above —
+   belt-and-suspenders so it can never become a stray grid item and shove
+   doc-explorer/chat-panel-v2 out of their columns again. */
+.deal-room-body-v2 > input {
+  display: none;
+}
+
+.doc-explorer {
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  height: 100%;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+/* Belt-and-suspenders for the collapse: even if the grid track doesn't
+   shrink to a true 0px (border-box rounding, a stray min-content edge
+   case), stripping the border/padding and fading to invisible guarantees
+   nothing is left to render — the earlier fix relied on width alone and
+   still left a visible sliver. */
+.deal-room-body-v2:not(.with-doc-panel) .doc-explorer {
+  border: none;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.doc-explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.doc-explorer-header h3 {
+  margin: 0;
+}
+
+.doc-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.doc-file-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  color: var(--color-text);
+  padding: 0.3rem 0;
+  font-weight: 400;
+  font-size: 0.82rem;
+  justify-content: flex-start;
+  text-align: left;
+  width: 100%;
+}
+
+.doc-file-link:hover {
+  color: var(--color-primary);
+}
+
+.doc-file-link.active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.doc-file-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Drag-and-drop overlay, covers the whole deal room body while dragging */
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(239, 246, 255, 0.92);
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--color-primary);
+  font-weight: 600;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.chat-panel-v2 {
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.doc-preview-panel {
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+
+.doc-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.doc-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.88rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.doc-preview-actions {
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.doc-preview-frame {
+  flex: 1;
+  border: none;
+  width: 100%;
+}
+
+.doc-preview-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--color-text-muted);
+  padding: 2rem;
+  text-align: center;
+}
+
+/* Right-side sliding drawer (deal details accordion) */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.4);
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.drawer {
+  width: 380px;
+  max-width: 90vw;
+  background: var(--color-surface);
+  height: 100%;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  animation: drawer-slide-in 0.18s ease;
+}
+
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.accordion {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.accordion-item {
+  border-bottom: 1px solid var(--color-surface);
+}
+
+.accordion-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: white;
+  color: var(--color-text);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: left;
+  border-radius: 0;
+}
+
+.accordion-header:hover {
+  background: var(--color-surface);
+}
+
+.accordion-header svg {
+  flex-shrink: 0;
+}
+
+/* doc-explorer already has its own padding — the accordion-header's own
+   left/right padding on top of that was compounding to leave barely enough
+   room for a folder name, forcing it to wrap onto two lines. */
+.doc-explorer .accordion-header {
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 0.85rem;
+}
+
+.doc-folder-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.doc-folder-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accordion-body {
+  padding: 0 1.5rem 1.25rem;
+}
+
+.doc-explorer .accordion-body {
+  padding: 0 0 1rem;
+}
+
+.chat-box {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Messages: Slack-style — every message shows an avatar, name, and time,
+   left-aligned regardless of who sent it (no "mine vs. theirs" bubble split). */
+.message-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.25rem 0;
+}
+
+.message-content {
+  min-width: 0;
+}
+
+.message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.message-meta strong {
+  font-size: 0.9rem;
+}
+
+.message-time {
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.message-text {
+  font-size: 0.92rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mention {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 600;
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+}
+
+/* Chat input + @mention dropdown */
+.chat-input-wrapper {
+  position: relative;
+  border-top: 1px solid var(--color-border);
+}
+
+.mention-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 1rem;
+  right: 1rem;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  margin-bottom: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+}
+
+.mention-item:hover {
+  background: var(--color-surface);
+}
+
+.mention-item-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  flex: 1;
+}
+
+.mention-item-info strong {
+  font-size: 0.85rem;
+}
+
+.mention-item-info span {
+  font-size: 0.72rem;
+}
+
+.mention-item .tag {
+  flex-shrink: 0;
+}
+
+.chat-input {
+  display: flex;
+  gap: 0.5rem;
+  padding: 1rem;
+}
+
+.chat-input input {
+  flex: 1;
+}
+
+.chat-input button {
+  padding: 0.6rem 0.9rem;
+}
+
+.sidebar-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.4rem 0;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--color-surface);
+}
+
+.sidebar-row span {
+  color: var(--color-text-muted);
+}
+
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.member-row-info {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.member-row-info strong {
+  font-size: 0.85rem;
+}
+
+.member-row-info span {
+  font-size: 0.72rem;
+}
+
+@media (max-width: 800px) {
+  .deal-room-body-v2 {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .doc-explorer,
+  .doc-preview-panel,
+  .chat-panel-v2 {
+    height: 480px;
+  }
+}
