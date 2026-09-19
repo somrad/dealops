@@ -9,6 +9,6 @@ from models import ActivityLog
 # timeline — see routes/activity.py.
 
 
-def log_activity(db: Session, deal_id: int, event_type: str, description: str, actor_id: int = None):
-    db.add(ActivityLog(deal_id=deal_id, actor_id=actor_id, event_type=event_type, description=description))
+def log_activity(db: Session, deal_id: int, event_type: str, description: str, actor_id: int = None, level: str = "info"):
+    db.add(ActivityLog(deal_id=deal_id, actor_id=actor_id, event_type=event_type, description=description, level=level))
     db.commit()

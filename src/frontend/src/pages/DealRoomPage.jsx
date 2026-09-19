@@ -58,6 +58,15 @@ function formatTime(isoString) {
   return new Date(isoString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function formatDateTime(isoString) {
+  return new Date(isoString).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -86,6 +95,31 @@ function renderMessageText(text, usersByUsername) {
   return parts;
 }
 
+// Agent replies are plain text built from f-strings/joins in agent_skills.py
+// ("  - name" bullets, "Header:" lines) — this gives that structure real
+// visual shape (bullets, bold headers) instead of a flat wall of text.
+function formatBotMessage(text) {
+  return text.split("\n").map((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed === "") return <div key={i} className="bot-message-spacer" />;
+    if (trimmed.startsWith("- ")) {
+      return (
+        <div key={i} className="bot-message-bullet">
+          {trimmed.slice(2)}
+        </div>
+      );
+    }
+    if (trimmed.endsWith(":") && trimmed.length < 60) {
+      return (
+        <div key={i} className="bot-message-heading">
+          {trimmed}
+        </div>
+      );
+    }
+    return <div key={i}>{line}</div>;
+  });
+}
+
 function DealRoomPage({ user }) {
   const { dealId } = useParams();
   const [deal, setDeal] = useState(null);
@@ -107,13 +141,15 @@ function DealRoomPage({ user }) {
   const [cursorPos, setCursorPos] = useState(0);
   const [mentionQuery, setMentionQuery] = useState(null);
   const [commandQuery, setCommandQuery] = useState(null);
+  const [slashQuery, setSlashQuery] = useState(null);
+  const [docQuery, setDocQuery] = useState(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showDocPanel, setShowDocPanel] = useState(true);
   const [showChatPanel, setShowChatPanel] = useState(true);
   const [rightPanelView, setRightPanelView] = useState("chat"); // "chat" | "ssi-borrower" | "ssi-lender"
   const [ssiDetailId, setSsiDetailId] = useState(null);
+  const [resizeTick, setResizeTick] = useState(0);
   const chatBoxRef = useRef(null);
-  const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -189,6 +225,30 @@ function DealRoomPage({ user }) {
     };
   }, [previewUrl]);
 
+  // "#zoom=page-width" only fits the PDF to the iframe's width at the
+  // moment it loads — the browser's built-in viewer doesn't keep re-fitting
+  // on its own afterward. Bumping resizeTick changes the iframe's src
+  // string (see below), which forces it to reload and refit against
+  // whatever width is available right now. Debounced on window resize;
+  // immediate when a side panel opens/closes, since that also changes the
+  // preview's available width without the window itself resizing.
+  useEffect(() => {
+    let timeout;
+    function handleResize() {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => setResizeTick((t) => t + 1), 250);
+    }
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  useEffect(() => {
+    setResizeTick((t) => t + 1);
+  }, [showDocPanel, showChatPanel]);
+
   async function handlePreviewClick(doc) {
     setPreviewLoading(true);
     try {
@@ -224,15 +284,14 @@ function DealRoomPage({ user }) {
     }
   }
 
-  // Only auto-scroll to the newest message if the user is already near the
-  // bottom — otherwise a background poll would keep yanking them back down
-  // while they're reading older messages.
+  // Newest message renders first (top of the list) — keep the user pinned
+  // to the top on a new arrival only if they're already near it, otherwise
+  // a background poll would yank them away while reading older messages.
   useEffect(() => {
     const container = chatBoxRef.current;
     if (!container) return;
-    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-    if (distanceFromBottom < 150) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (container.scrollTop < 150) {
+      container.scrollTo({ top: 0, behavior: "smooth" });
     }
   }, [messages]);
 
@@ -303,6 +362,31 @@ function DealRoomPage({ user }) {
     return agentCommands.filter((c) => c.name.toLowerCase().includes(q));
   }, [commandQuery, agentCommands]);
 
+  // "/" is a shortcut straight to an agent skill — same commands as
+  // "@AgentName <command>", just faster to reach for without typing the
+  // agent's full name first.
+  const slashSuggestions = useMemo(() => {
+    if (slashQuery === null) return [];
+    const q = slashQuery.toLowerCase();
+    return agentCommands.filter((c) => c.name.toLowerCase().includes(q));
+  }, [slashQuery, agentCommands]);
+
+  // "#" references a specific document already in this deal — inserted as
+  // plain "#filename" text (not parsed by the backend), a fast way to point
+  // at a file while talking to a person or the agent.
+  const docSuggestions = useMemo(() => {
+    if (docQuery === null) return [];
+    const q = docQuery.toLowerCase();
+    return documents.filter((d) => d.original_filename.toLowerCase().includes(q)).slice(0, 8);
+  }, [docQuery, documents]);
+
+  function clearTriggers() {
+    setMentionQuery(null);
+    setCommandQuery(null);
+    setSlashQuery(null);
+    setDocQuery(null);
+  }
+
   function handleTextChange(event) {
     const value = event.target.value;
     const pos = event.target.selectionStart;
@@ -316,15 +400,34 @@ function DealRoomPage({ user }) {
     if (agentUser) {
       const commandMatch = before.match(new RegExp(`@${escapeRegExp(agentUser.username)}\\s+(\\w*)$`));
       if (commandMatch) {
+        clearTriggers();
         setCommandQuery(commandMatch[1]);
-        setMentionQuery(null);
         return;
       }
     }
-    setCommandQuery(null);
 
     const mentionMatch = before.match(/@(\w*)$/);
-    setMentionQuery(mentionMatch ? mentionMatch[1] : null);
+    if (mentionMatch) {
+      clearTriggers();
+      setMentionQuery(mentionMatch[1]);
+      return;
+    }
+
+    const slashMatch = before.match(/\/(\w*)$/);
+    if (slashMatch) {
+      clearTriggers();
+      setSlashQuery(slashMatch[1]);
+      return;
+    }
+
+    const docMatch = before.match(/#([\w.\-]*)$/);
+    if (docMatch) {
+      clearTriggers();
+      setDocQuery(docMatch[1]);
+      return;
+    }
+
+    clearTriggers();
   }
 
   function selectCommand(commandName) {
@@ -347,13 +450,33 @@ function DealRoomPage({ user }) {
     inputRef.current?.focus();
   }
 
+  function selectSlashCommand(commandName) {
+    if (!agentUser) return;
+    const before = text.slice(0, cursorPos);
+    const after = text.slice(cursorPos);
+    const newBefore = before.replace(/\/(\w*)$/, `@${agentUser.username} ${commandName} `);
+    const newText = newBefore + after;
+    setText(newText);
+    setSlashQuery(null);
+    inputRef.current?.focus();
+  }
+
+  function selectDocument(doc) {
+    const before = text.slice(0, cursorPos);
+    const after = text.slice(cursorPos);
+    const newBefore = before.replace(/#([\w.\-]*)$/, `#${doc.original_filename} `);
+    const newText = newBefore + after;
+    setText(newText);
+    setDocQuery(null);
+    inputRef.current?.focus();
+  }
+
   async function handleSend(event) {
     event.preventDefault();
     if (!text.trim()) return;
     await postMessage(dealId, text);
     setText("");
-    setMentionQuery(null);
-    setCommandQuery(null);
+    clearTriggers();
     refresh();
   }
 
@@ -512,7 +635,7 @@ function DealRoomPage({ user }) {
                 </div>
               </div>
               <iframe
-                src={`${previewUrl}#zoom=page-width`}
+                src={`${previewUrl}#zoom=page-width&t=${resizeTick}`}
                 title={previewDoc.original_filename}
                 className="doc-preview-frame"
               />
@@ -534,19 +657,28 @@ function DealRoomPage({ user }) {
                 No messages yet — say hello to get the deal moving. Type @ to mention someone.
               </p>
             )}
-            {messages.map((m) => (
-              <div key={m.id} className="message-row">
-                <Avatar name={m.user.name} size={36} role={m.user.role} />
-                <div className="message-content">
-                  <div className="message-meta">
-                    <strong>{m.user.name}</strong>
-                    <span className="message-time">{formatTime(m.created_at)}</span>
+            {messages
+              .slice()
+              .reverse()
+              .map((m) => {
+                const isBot = m.user.role === "agent";
+                return (
+                  <div key={m.id} className={`message-row ${isBot ? `bot-message-box level-${m.level}` : ""}`}>
+                    <Avatar name={m.user.name} size={36} role={m.user.role} />
+                    <div className="message-content">
+                      <div className="message-meta">
+                        <strong>{m.user.name}</strong>
+                      </div>
+                      {isBot ? (
+                        <div className="message-text">{formatBotMessage(m.text)}</div>
+                      ) : (
+                        <p className="message-text">{renderMessageText(m.text, usersByUsername)}</p>
+                      )}
+                      <div className="message-timestamp">{formatDateTime(m.created_at)}</div>
+                    </div>
                   </div>
-                  <p className="message-text">{renderMessageText(m.text, usersByUsername)}</p>
-                </div>
-              </div>
-            ))}
-            <div ref={bottomRef} />
+                );
+              })}
           </div>
 
           <form className="chat-input-wrapper" onSubmit={handleSend}>
@@ -561,17 +693,40 @@ function DealRoomPage({ user }) {
                   </div>
                 ))}
               </div>
+            ) : mentionQuery !== null && mentionSuggestions.length > 0 ? (
+              <div className="mention-dropdown">
+                {mentionSuggestions.map((u) => (
+                  <div key={u.id} className="mention-item" onMouseDown={() => selectMention(u)}>
+                    <Avatar name={u.name} size={24} role={u.role} />
+                    <div className="mention-item-info">
+                      <strong>{u.name}</strong>
+                      <span className="muted">@{u.username} · {ROLE_LABELS[u.role] || u.role}</span>
+                    </div>
+                    {!memberIds.has(u.id) && <span className="tag">not in deal</span>}
+                  </div>
+                ))}
+              </div>
+            ) : slashQuery !== null && slashSuggestions.length > 0 ? (
+              <div className="mention-dropdown">
+                {slashSuggestions.map((c) => (
+                  <div key={c.name} className="mention-item" onMouseDown={() => selectSlashCommand(c.name)}>
+                    <div className="mention-item-info">
+                      <strong>/{c.name}</strong>
+                      <span className="muted">{c.help}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
-              mentionQuery !== null && mentionSuggestions.length > 0 && (
+              docQuery !== null && docSuggestions.length > 0 && (
                 <div className="mention-dropdown">
-                  {mentionSuggestions.map((u) => (
-                    <div key={u.id} className="mention-item" onMouseDown={() => selectMention(u)}>
-                      <Avatar name={u.name} size={24} role={u.role} />
+                  {docSuggestions.map((d) => (
+                    <div key={d.id} className="mention-item" onMouseDown={() => selectDocument(d)}>
+                      <FaFileAlt />
                       <div className="mention-item-info">
-                        <strong>{u.name}</strong>
-                        <span className="muted">@{u.username} · {ROLE_LABELS[u.role] || u.role}</span>
+                        <strong>{d.original_filename}</strong>
+                        <span className="muted">{d.folder}</span>
                       </div>
-                      {!memberIds.has(u.id) && <span className="tag">not in deal</span>}
                     </div>
                   ))}
                 </div>
@@ -580,10 +735,10 @@ function DealRoomPage({ user }) {
             <div className="chat-input">
               <input
                 ref={inputRef}
-                placeholder="Type a message... use @ to mention someone"
+                placeholder="Type a message... @ to mention, / for a skill, # for a document"
                 value={text}
                 onChange={handleTextChange}
-                onBlur={() => setTimeout(() => { setMentionQuery(null); setCommandQuery(null); }, 150)}
+                onBlur={() => setTimeout(clearTriggers, 150)}
               />
               <button type="submit">
                 <FaPaperPlane />
@@ -675,6 +830,23 @@ function DealRoomPage({ user }) {
                     >
                       <FaCheckCircle /> Approve
                     </button>
+                  )}
+
+                  <h3 style={{ marginTop: "1.25rem" }}>Activity</h3>
+                  {detailSsi.activity.length === 0 ? (
+                    <p className="muted small">No recorded activity yet.</p>
+                  ) : (
+                    <div className="ssi-activity-list">
+                      {detailSsi.activity.map((a, i) => (
+                        <div key={i} className={`ssi-activity-item bot-message-box level-${a.level}`}>
+                          <div className="message-meta">
+                            <strong>{a.actor_name}</strong>
+                          </div>
+                          <div className="message-text">{a.text}</div>
+                          <div className="message-timestamp">{formatDateTime(a.created_at)}</div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               ) : activeSsiList.length === 0 ? (
@@ -771,19 +943,20 @@ function DealRoomPage({ user }) {
                       .reverse()
                       .map((item, i) => {
                         const Icon = ACTIVITY_ICONS[item.event_type] || FaFlag;
+                        const isBot = item.actor_role === "agent";
                         const text =
                           item.description.length > 120
                             ? item.description.slice(0, 120) + "…"
                             : item.description;
                         return (
-                          <div key={i} className="activity-row">
+                          <div key={i} className={`activity-row ${isBot ? `bot-message-box level-${item.level}` : ""}`}>
                             <Icon className="activity-icon" />
                             <div className="activity-row-body">
                               <div className="activity-row-meta">
                                 <strong>{item.actor_name}</strong>
-                                <span className="muted small">{formatTime(item.timestamp)}</span>
                               </div>
                               <p className="small">{text}</p>
+                              <div className="message-timestamp">{formatDateTime(item.timestamp)}</div>
                             </div>
                           </div>
                         );

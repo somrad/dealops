@@ -48,6 +48,14 @@ class Message(Base):
     deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     text = Column(String, nullable=False)
+    # info / success / error — set explicitly wherever a message is created,
+    # never inferred from the text later. Only meaningful for agent-authored
+    # messages (the UI boxes those); a human's own message ignores it.
+    level = Column(String, default="info")
+    # Set only on the extraction/validation messages that concern a specific
+    # SSI — lets the SSI detail view show its own mini history (submitted,
+    # then approved/rejected) without guessing from message text.
+    standing_instruction_id = Column(Integer, ForeignKey("standing_instructions.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User")
@@ -108,6 +116,7 @@ class ActivityLog(Base):
     actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     event_type = Column(String, nullable=False)  # deal_created, llm_call, ...
     description = Column(String, nullable=False)
+    level = Column(String, default="info")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     actor = relationship("User")

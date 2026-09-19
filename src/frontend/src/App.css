@@ -708,6 +708,25 @@ label {
   background: #15803d;
 }
 
+.ssi-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.ssi-activity-item {
+  padding: 0.5rem 0.7rem;
+}
+
+.ssi-activity-item .message-meta strong {
+  font-size: 0.8rem;
+}
+
+.ssi-activity-item .message-text {
+  font-size: 0.85rem;
+}
+
 .activity-list {
   display: flex;
   flex-direction: column;
@@ -1104,12 +1123,14 @@ label {
   flex: 1;
   border: none;
   width: 100%;
-  /* Matches the grey canvas most native PDF viewers already show behind the
-     white page — also covers the loading flash before the PDF paints.
-     The in-viewer zoom itself is driven by the #zoom=page-width URL
-     fragment on the iframe src (Chrome/Firefox honor it; Safari may not —
-     that's the browser's own PDF viewer, not something CSS can override). */
-  background: #525659;
+  /* Light grey letterboxing behind the page — also covers the loading
+     flash before the PDF paints. The in-viewer zoom itself is driven by
+     the #zoom=page-width URL fragment on the iframe src, re-applied on
+     resize by changing that src (see resizeTick in DealRoomPage.jsx) since
+     the native viewer only fits once at load time otherwise. (Chrome/
+     Firefox honor the fragment; Safari's own PDF viewer may not — that's
+     the browser, not something CSS can override.) */
+  background: #f3f4f6;
 }
 
 .doc-preview-empty {
@@ -1246,6 +1267,7 @@ label {
 
 .message-content {
   min-width: 0;
+  flex: 1;
 }
 
 .message-meta {
@@ -1258,9 +1280,11 @@ label {
   font-size: 0.9rem;
 }
 
-.message-time {
-  font-size: 0.72rem;
+.message-timestamp {
+  font-size: 0.68rem;
   color: var(--color-text-muted);
+  text-align: right;
+  margin-top: 0.15rem;
 }
 
 .message-text {
@@ -1268,6 +1292,73 @@ label {
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Bot-authored content only (chat + Activity Log) — a colored, mildly
+   rounded box around the WHOLE row (avatar/icon included, not just the
+   text) so an agent message reads as distinct from a human one at a
+   glance, with the color itself carrying the outcome (info/success/error). */
+.bot-message-box {
+  border-radius: 10px;
+  border: 1px solid;
+}
+
+.bot-message-box.level-info {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  color: #374151;
+}
+
+.bot-message-box.level-success {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.bot-message-box.level-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.message-row.bot-message-box {
+  padding: 0.6rem 0.8rem;
+  margin: 0.3rem 0;
+}
+
+.activity-row.bot-message-box {
+  padding: 0.6rem 0.7rem;
+  margin: 0.15rem 0;
+}
+
+/* Let the icon pick up the box's level color instead of the default muted
+   grey — ties the icon visually into the same signal as the box itself. */
+.activity-row.bot-message-box .activity-icon {
+  color: inherit;
+}
+
+.bot-message-heading {
+  font-weight: 600;
+  margin-top: 0.4rem;
+}
+
+.bot-message-heading:first-child {
+  margin-top: 0;
+}
+
+.bot-message-bullet {
+  position: relative;
+  padding-left: 0.9rem;
+}
+
+.bot-message-bullet::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+}
+
+.bot-message-spacer {
+  height: 0.35rem;
 }
 
 .mention {

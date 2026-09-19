@@ -66,7 +66,7 @@ def upload_documents(
         # automated classification result — same pattern as the mention flow.
         db.add(Message(deal_id=deal_id, user_id=current_user.id, text=f"Uploaded {upload.filename}"))
         db.commit()
-        db.add(Message(deal_id=deal_id, user_id=agent.id, text=f'Filed "{upload.filename}" under {folder}.'))
+        db.add(Message(deal_id=deal_id, user_id=agent.id, text=f'Filed "{upload.filename}" under {folder}.', level="info"))
         db.commit()
 
         # FR-5: try extraction on every upload, not just Borrower/Lenders —
@@ -112,6 +112,12 @@ def upload_documents(
                     f"instruction to Loan IQ (account ...{last4}, reference {ssi.loan_iq_reference}). "
                     f"Awaiting Checker validation."
                 ),
+                # Not "success" — the SSI is still pending Checker review at
+                # this point, and a green box here would read as "done" when
+                # it isn't. Reserve success/error for the Checker's actual
+                # validate/reject outcome.
+                level="info",
+                standing_instruction_id=ssi.id,
             ))
             db.commit()
 

@@ -49,6 +49,24 @@ def list_standing_instructions(deal: dict) -> str:
     return "\n".join(lines)
 
 
+def list_pending_validations(deal: dict) -> str:
+    # Deliberately read-only: ai_api has no DB access and can't perform the
+    # actual write, and blind re-entry (FR-10) was a deliberate choice to
+    # keep as a dedicated UI flow, not a chat command — typing the account
+    # number into a shared, logged channel would undercut the point of a
+    # blind, independent check. This just tells you what's waiting.
+    ssis = deal.get("standing_instructions", [])
+    pending = [s for s in ssis if s["status"] == "pending_checker_review"]
+    if not pending:
+        return "Nothing awaiting Checker validation right now."
+
+    lines = [f"{len(pending)} standing instruction{'s' if len(pending) != 1 else ''} awaiting Checker validation:"]
+    for s in pending:
+        lines.append(f"  - {s['account_holder_name'] or 'unnamed party'}")
+    lines.append("\nOpen the SSI panel (left rail) and use Approve to validate — blind re-entry happens there, not in chat.")
+    return "\n".join(lines)
+
+
 # Registry of agent commands/skills. Add new capabilities here as they're
 # built — each is a function taking the deal context dict and returning the
 # reply text. Nothing else needs to change to add one.
@@ -64,6 +82,10 @@ AGENT_COMMANDS = {
     "ssi": {
         "handler": list_standing_instructions,
         "help": "ssi — list standing instructions and their Checker-review status",
+    },
+    "validate": {
+        "handler": list_pending_validations,
+        "help": "validate — list standing instructions awaiting Checker validation",
     },
 }
 

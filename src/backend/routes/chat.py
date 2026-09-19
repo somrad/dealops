@@ -78,7 +78,7 @@ def post_message(deal_id: int, payload: MessageCreate, current_user: User = Depe
         command_text = match.group(1).strip() if match else ""
         deal_context = build_deal_context(deal, db)
         reply_text = ai_client.agent_respond(command_text, agent.name, agent.username, deal_context)
-        db.add(Message(deal_id=deal_id, user_id=agent.id, text=reply_text))
+        db.add(Message(deal_id=deal_id, user_id=agent.id, text=reply_text, level="info"))
         db.commit()
 
     # An Ops Manager @mentioning a real person is the actual assignment action
@@ -103,6 +103,7 @@ def post_message(deal_id: int, payload: MessageCreate, current_user: User = Depe
                 deal_id=deal_id,
                 user_id=agent.id,
                 text=f"{mentioned_user.name} was added to this deal.",
+                level="success",
             ))
             db.commit()
 

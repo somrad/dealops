@@ -57,6 +57,7 @@ class MessageCreate(BaseModel):
 class MessageOut(BaseModel):
     id: int
     text: str
+    level: str = "info"
     created_at: datetime
     user: UserOut
 
@@ -77,6 +78,13 @@ class DocumentOut(BaseModel):
         from_attributes = True
 
 
+class SsiActivityItemOut(BaseModel):
+    text: str
+    level: str = "info"
+    actor_name: str
+    created_at: datetime
+
+
 class StandingInstructionOut(BaseModel):
     id: int
     document_id: int
@@ -94,6 +102,7 @@ class StandingInstructionOut(BaseModel):
     submitted_at: datetime
     validated_by: Optional[UserOut] = None
     validated_at: Optional[datetime] = None
+    activity: List[SsiActivityItemOut] = []
 
 
 class StandingInstructionValidateRequest(BaseModel):
@@ -111,3 +120,4 @@ class ActivityItemOut(BaseModel):
     actor_role: Optional[str] = None
     event_type: str
     description: str
+    level: str = "info"

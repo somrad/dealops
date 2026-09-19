@@ -23,6 +23,7 @@ def get_deal_activity(deal_id: int, current_user: User = Depends(get_current_use
             "actor_role": entry.actor.role if entry.actor else None,
             "event_type": entry.event_type,
             "description": entry.description,
+            "level": entry.level,
         })
     for message in db.query(Message).filter(Message.deal_id == deal_id).all():
         items.append({
@@ -31,6 +32,7 @@ def get_deal_activity(deal_id: int, current_user: User = Depends(get_current_use
             "actor_role": message.user.role,
             "event_type": "message",
             "description": message.text,
+            "level": message.level,
         })
 
     items.sort(key=lambda item: item["timestamp"])

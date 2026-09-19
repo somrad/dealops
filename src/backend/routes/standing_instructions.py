@@ -21,7 +21,17 @@ def mask_account_number(account_number: str) -> str:
     return "•" * (len(account_number) - 4) + account_number[-4:]
 
 
-def build_ssi_out(ssi: StandingInstruction, document: Document) -> dict:
+def build_ssi_out(ssi: StandingInstruction, document: Document, db: Session) -> dict:
+    # This SSI's own mini history — submitted, then approved/rejected — read
+    # straight off the messages that were explicitly linked to it at
+    # creation time (documents.py, this file's validate()), not guessed from
+    # text. Messages predating that link (if any) just won't show here.
+    activity_rows = (
+        db.query(Message)
+        .filter(Message.standing_instruction_id == ssi.id)
+        .order_by(Message.created_at)
+        .all()
+    )
     return {
         "id": ssi.id,
         "document_id": ssi.document_id,
@@ -39,6 +49,10 @@ def build_ssi_out(ssi: StandingInstruction, document: Document) -> dict:
         "submitted_at": ssi.submitted_at,
         "validated_by": ssi.validated_by,
         "validated_at": ssi.validated_at,
+        "activity": [
+            {"text": m.text, "level": m.level, "actor_name": m.user.name, "created_at": m.created_at}
+            for m in activity_rows
+        ],
     }
 
 
@@ -46,7 +60,7 @@ def build_ssi_out(ssi: StandingInstruction, document: Document) -> dict:
 def list_standing_instructions(deal_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     require_deal_membership(deal_id, current_user, db)
     rows = db.query(StandingInstruction).filter(StandingInstruction.deal_id == deal_id).order_by(StandingInstruction.submitted_at).all()
-    return [build_ssi_out(r, r.document) for r in rows]
+    return [build_ssi_out(r, r.document, db) for r in rows]
 
 
 @router.get("/deals/{deal_id}/standing-instructions/{ssi_id}/highlighted-document")
@@ -120,7 +134,13 @@ def validate_standing_instruction(
         reply_text = f"Checker {current_user.name} verified the standing instruction for {party} — account number confirmed."
     else:
         reply_text = f"Checker {current_user.name} could NOT verify the standing instruction for {party} — re-entered number did not match. Flagged for review."
-    db.add(Message(deal_id=deal_id, user_id=agent.id, text=reply_text))
+    db.add(Message(
+        deal_id=deal_id,
+        user_id=agent.id,
+        text=reply_text,
+        level="success" if match else "error",
+        standing_instruction_id=ssi.id,
+    ))
     db.commit()
 
-    return {"match": match, "standing_instruction": build_ssi_out(ssi, ssi.document)}
+    return {"match": match, "standing_instruction": build_ssi_out(ssi, ssi.document, db)}
