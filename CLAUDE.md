@@ -61,7 +61,7 @@ Deal Room capabilities agreed so far (see `docs/SPECIFICATIONS.md` for the full 
 - **Code style:** deliberately kept very simple and readable — small single-purpose files, descriptive names, minimal abstraction, so the codebase stays approachable to a non-expert reader.
 - **Users:** demo users are hardcoded/seeded directly into the database — POC only, not a real auth system. Currently: Dana (Deal Team), Omar (Ops Manager), Priya (Ops Team), Chen (Checker), Som (Ops Team), Kamal (Checker) — `username`/`password123` for each, listed in `backend/seed_data.py` and as one-click login buttons on the login page.
 - **UI:** minimalist, white background, generous whitespace, icons used liberally as visual hints (folder icons, signal-board status dots, upload/lock icons, etc.).
-- **Agentic AI isolation:** anywhere AI is used (document folder classification per FR-3, borrower/lender detail extraction per FR-5, discrepancy detection per FR-12) lives in its own isolated backend module, called through a plain function interface — so the POC's simple rule-based mock logic can later be swapped for a real model without touching the rest of the app. Concretely, this is the `backend/ai/` folder — see "Proposed Repository Structure" below.
+- **Agentic AI isolation:** as of the `ai_api` extraction (see below), this is no longer just a folder-level convention — it's a real service boundary. Everywhere AI/agent reasoning happens (document folder classification per FR-3, agent skills, and eventually FR-5 extraction / FR-12 discrepancy detection) lives in `src/ai_api/`, a separate stateless FastAPI service the backend calls over HTTP. Nothing outside `src/ai_api/` contains reasoning logic.
 
 ### Repository Structure (implemented — auth, deals, chat)
 
@@ -70,7 +70,7 @@ Deal Room capabilities agreed so far (see `docs/SPECIFICATIONS.md` for the full 
 - **`passlib` was dropped.** It doesn't work with modern `bcrypt` package versions (`AttributeError: module 'bcrypt' has no attribute '__about__'`). Password hashing now calls the `bcrypt` library directly via `hash_password`/`verify_password` in `backend/security.py` — simpler code anyway.
 - **Vite is pinned to `^5.4.11`** (not the newest major). Vite 8's default bundler (rolldown) needs a native binary this machine's Node version (20.16) doesn't get automatically, and needs Node ^20.19/22.12+ to avoid warnings. `@vitejs/plugin-react` is pinned to `^4.3.4` to match. A clean `rm -rf node_modules && npm install` has been verified to work with no manual steps.
 
-To run it: see "How to run it" — backend needs a venv + `pip install -r requirements.txt` + `python seed_data.py`; frontend needs `npm install`. Both dev servers were running at the end of this session (backend on :8000, frontend on :5173).
+To run it: see "How to run it" under "Repository Structure" below — this now involves three processes (`ai_api`, `backend`, `frontend`), not two, since the AI/agent code was later extracted into its own service.
 
 **Bug fixed — Ops Manager visibility was documented but not implemented.** The first backend pass gated deal visibility purely on explicit `DealMember` rows, so an Ops Manager couldn't see a deal (or its staffing request) until someone added them — contradicting the standing-visibility rule already written into this file. Fixed in `backend/routes/deals.py`: both `list_my_deals` and `require_deal_membership` now special-case `role == "ops_manager"` to bypass the membership check entirely. Backend now runs with `--reload` so future route edits apply without a manual restart.
 
@@ -120,40 +120,107 @@ Adding `agent_for_deal_id` (FK `users.id → deals.id`) alongside the existing `
 
 **Icon rail: three fixes.** (1) Grey background (`var(--color-surface)`) instead of white, so it reads as a distinct dock rather than another content card. (2) Pulled out of `.deal-room-body-v2`'s own padded/centered grid into a new wrapping `.deal-room-layout` (flex row: rail + body) — the rail is no longer subject to the body's `padding`/`max-width`/`margin: 0 auto`, so it now sits flush against the actual window edge instead of floating with a gap on either side. (3) **Bug fixed:** collapsing the Documents panel only hid it partially — a sliver of accordion chevrons stayed visible. Classic CSS Grid/Flexbox gotcha: a grid item's default `min-width: auto` refuses to let it shrink below its *content's* intrinsic width, even when the track itself is set to `0`. Fixed with an explicit `min-width: 0` on `.doc-explorer`.
 
+**Git repo initialized.** Root `.gitignore` excludes `backend/venv/`, `**/__pycache__/`, `backend/dealops.db` (regenerate with `python seed_data.py`), `backend/storage/` (runtime-uploaded files, not source), and editor/OS junk (`.vscode/`, `.DS_Store`). `frontend/` keeps its own Vite-scaffolded `.gitignore` for `node_modules`/`dist`. Initial commit: 54 files, everything up through the icon-rail fixes.
+
 **Known POC limitation:** login tokens are in-memory (`backend/security.py`), so restarting the backend invalidates every active browser session — expect to need to log in again after a backend restart during development.
 
 **UI design note:** the first pass was too literally "minimalist" — plain stacked boxes, no real layout. Revised to an actual app shell: a sticky `Navbar` (logo, user avatar, role badge, logout), a `Modal` component for the "New Deal" form instead of an inline collapsing box, a deal grid with per-product icons and status pills instead of a plain list, and a two-column Deal Room (chat + a right-hand info sidebar) instead of one stacked column — that sidebar is also where the FR-11 Signal Board will live once built, so the layout was chosen with that in mind. Still white background, still icon-forward, per the original ask — "minimalist" now means restrained color/decoration, not absence of layout. Design system lives in `frontend/src/App.css` as CSS variables (`--color-primary`, `--radius`, `--shadow-md`, etc.); shared pieces (`Avatar`, `Navbar`, `Modal`) live in `frontend/src/components/`.
 
-### Proposed Repository Structure
+**AI/agent code extracted into `ai_api`, a separate service.** Previously `backend/ai/document_classifier.py` and `backend/agent.py` were in-process modules, imported directly and given live ORM objects and a DB session. Now `src/ai_api/` is its own FastAPI app (own venv, own `requirements.txt`, port 8001) with zero database access — `backend/ai_client.py` is the sole coupling point, calling it over HTTP. This forced a real interface change: `agent_skills.py`'s functions (`describe_deal`, `list_deal_documents`, `handle_agent_mention`) now take a plain `dict` instead of `(deal, db)`, because an HTTP boundary can't carry a live SQLAlchemy session — the backend assembles that dict (`build_deal_context()` in `routes/chat.py`) before calling out. Verified the full chain end-to-end post-migration: `GET /agent-commands` proxies through to `ai_api`, document upload classifies correctly via the new HTTP call, and `@agent describe` returns correct live data — all through the real network boundary, not mocked. See "Repository Structure" below for the full rationale (this is also where `/src` came from — `frontend`/`backend` moved there alongside the new `ai_api`, at the founder's request, to keep all three services under one folder).
+
+**Chat is now collapsible too, same mechanism as Documents — plus a labeled toggle since chat is core.** Generalized the collapse system from a single `with-doc-panel` class to CSS custom properties (`--doc-col`, `--chat-col`, set inline per panel's open state) so `grid-template-columns` can drive two independently-collapsible tracks instead of one; the "strip border/padding, fade to `opacity: 0`, `pointer-events: none`" belt-and-suspenders treatment became a reusable `.panel-collapsed` class applied to whichever panel is closed. Two toggle points, both controlling the same `showChatPanel` state: a `FaComments` icon in the rail (second icon, after Documents) for a quick reach, and a labeled icon+"Chat" button in the top bar (left of the deal-details burger) since — per the founder — chat is crucial enough to deserve a visible, named control, not just an icon. Both default open.
+
+**Chat given a standing green identity.** Both chat toggles (rail icon, top-bar button) now carry a muted green tint (`#f0fdf4`/`#16a34a`, darkening to `#dcfce7`/`#15803d` when active) — deliberately reused from the existing `.status-open` pill rather than introducing a new color, and deliberately *not* WhatsApp's saturated brand green, per the founder's explicit ask. One CSS-cascade gotcha hit and fixed: `.chat-rail-btn.active` and `.icon-rail-btn.active` have equal selector specificity, so source order decides the winner — had to move the chat-specific rule to *after* the generic one in the stylesheet, or the green would've silently lost to the generic blue active state.
+
+**Per-product icons and colors.** Commercial Loan now shows `FaIndustry` (a factory) in a muted amber (`#fef3c7`/`#d97706`) instead of sharing the generic blue `FaBuilding`; Real Estate Loan kept its existing `FaHome` and blue, unchanged as asked. `PRODUCT_META` (duplicated in `DealListPage.jsx` and `DealRoomPage.jsx`) now carries `iconBg`/`iconColor` per product type, applied via inline `style` on the icon wrapper since colors now vary per instance rather than being one shared CSS-class color. A `DEFAULT_PRODUCT_META` covers any future/unrecognized product type with the old blue `FaBuilding` as a sensible fallback.
+
+**FR-5 implemented — LLM-powered payment extraction, standing instructions, mock Loan IQ, Checker validation.** Big multi-part addition, all verified end-to-end (not just built):
+
+- **LangChain, deliberately, not a raw Anthropic SDK call.** The founder's explicit call: "I might use a different LLM later" — LangChain's `.with_structured_output()` abstraction is what makes that a config change, not a rewrite. The classifier stays rule-based (regex-shaped decisions don't need an LLM); extraction genuinely does (bank details are free-text prose), so it's the one place in this codebase that actually calls a model.
+- **Reused and vendored `agentkit`** (the founder's existing shared library at `~/Desktop/code/a2a/agentkit`) into `src/ai_api/agentkit/`, copied rather than installed as an editable external dependency — keeps `dealops` self-contained instead of depending on a sibling project's absolute path existing on whatever machine eventually runs this. `ModelFactory` (provider/model chosen via `ai_api/.env`: `DEFAULT_MODEL_PROVIDER`/`NAME`, `CHEAP_MODEL_PROVIDER`/`NAME`) is what extraction uses — `.cheap()`, since structured extraction doesn't need the smart tier. **Found and fixed a real bug in the source library while integrating**: `agentkit`'s `pyproject.toml` was missing `langgraph`, `langgraph-checkpoint-sqlite`, `aiosqlite`, and `httpx` — its own `__init__.py` imports `ShortTermMemory` unconditionally, which needs `langgraph`/`aiosqlite`, so any consumer would hit this. Fixed in the source project too, not just worked around locally.
+- **`BaseAgent`** (agentkit's ReAct tool-calling loop, confirmed against a real usage example at `~/Desktop/code/a2a/concierge/ConciergeAgent.py`) was deliberately *not* used for extraction — a single "pull these fields from this text" call doesn't need a multi-turn tool loop. It's the right shape for later, if the deal agent's `describe`/`docs`/`ssi` skills ever need to genuinely reason (look things up, decide what to check) rather than format already-known data — noted as the natural next evolution, not built now.
+- **`ai_api/extractor.py`**: `extract_payment_details(text) -> list[dict]`, one entry per party found (a document can have multiple — verified against the real 2-lender sample document, both extracted correctly with zero hallucination on fields the source didn't state).
+- **Backend**: new `StandingInstruction` model, `mock_loan_iq.py` (clearly labeled fictional — always succeeds, generates a fake `LIQ-` reference), auto-triggered right after classification on every upload (tries extraction on every document rather than special-casing by folder — documents with no payment details just come back with an empty party list, simpler than maintaining a folder allowlist).
+- **Checker validation is a *dedicated UI*, not a chat command** (the founder's explicit choice over the simpler chat-command alternative) — a real form in the drawer's "Standing Instructions" section. **Never shows the extracted number** to the Checker, in the list or the form — `masked_account_number` (last 4 digits only) is all the API ever returns; the Checker re-types what they see on the actual source document (open via the center preview pane), and the match happens blind, server-side. This is FR-10's point-and-call for real, not just in spirit.
+- **The validate action lives in the backend, not `ai_api`** — comparing a re-entered string to a stored value is a deterministic authorization check (same category as the ops-manager-grants-membership rule), not AI reasoning. `POST /deals/{id}/standing-instructions/{ssi_id}/validate`, Checker-role-only (403 otherwise), posts the result as an agent chat message either way.
+- **The "deal map"** (the founder's term) is `build_deal_context()` in `routes/chat.py`, now extended with a `standing_instructions` summary — and a new `ssi` agent skill exposes it via chat too. This function is the actual context-engineering seam in this codebase: everything `ai_api` is allowed to see about a deal passes through here.
+- Verified live: real extraction against the 2-lender sample doc, correct SSI creation + mock Loan IQ submission + chat logging for both, Checker validation tested both ways (correct match → `checker_validated`, wrong number → `rejected`), a non-Checker blocked with 403, and the `ssi`/`describe` commands both reflecting real data.
+
+**Activity Log implemented — two distinct logging layers, on purpose.** (1) **File-based, via `agentkit`'s `setup_logger`**, for every actual LLM call: `ai_api/extractor.py` logs start/complete with provider, model, char count, and elapsed ms to `src/logs/ai_api.extractor.log` — a shared `src/logs/` folder, not nested under `ai_api`, so backend logging can land there too later. This is developer/ops-facing, not something end users see. (2) **A DB-backed `ActivityLog` table**, for the user-facing "Deal Details → Activity Log" drawer section — merges `ActivityLog` rows (system events with no natural chat message: `deal_created`, `llm_call`) with existing `Message` rows into one chronological timeline via `GET /deals/{id}/activity`. Deliberately doesn't duplicate `Message` data into `ActivityLog` — the merge happens at query time in `routes/activity.py`, so there's exactly one source of truth for chat content and no risk of the two drifting apart. `activity.py`'s `log_activity()` helper is the only way anything writes an `ActivityLog` row; called at deal creation ("room creation," as asked) and after every extraction call (successful or zero-party). Frontend renders it newest-first with an icon per event type (`FaFlag`/`FaRobot`/`FaComments`), verified against a real upload showing `deal_created`, `message`, and `llm_call` entries correctly interleaved with real timestamps.
+
+**Standing Instructions UI overhauled — moved from the drawer into a dedicated switchable right panel.** The right column (previously chat-only) now shows one of three views (`rightPanelView`: `"chat" | "ssi-borrower" | "ssi-lender"`), all sharing one `toggleRightPanel(view)` helper and the same `--chat-col` grid track — clicking a rail icon or the top-bar Chat button switches *content*, not layout. Two new rail icons (`FaUserTie` Borrower, `FaUniversity` Lender), each with a small red pending-count badge (`.rail-badge`) — the actual "notify the Checker" mechanism, since a raw chat message is easy to miss. Grouping is by the SSI's **source document's folder** (`document_folder`, new field on `StandingInstructionOut` — no separate party-type column needed, FR-3's classification already carries this signal). Each list row has an eye icon (`FaEye`) opening a full detail view in the same panel (back button via `FaArrowLeft`) showing everything: bank, masked number, Loan IQ reference, source document, **who added it** (the source document's uploader — `added_by`, derived via the existing `Document.uploaded_by` relationship, no new field needed) and **who validated it**. The blind-re-entry validation `Modal` is unchanged (still the actual security mechanism) — just retriggered from a prominent green "Approve" button (`.btn-approve`) in the detail view instead of a small secondary button in a list row. Removed the old drawer "Standing Instructions" section entirely — superseded, kept would've meant two places showing the same data.
+
+**PDF preview: width-fit zoom + grey canvas.** `<iframe src={previewUrl + "#zoom=page-width"}>` — the `#zoom=` URL fragment is honored by Chrome's and Firefox's built-in PDF viewers (Safari's may not respect it — that's the browser's own viewer, not something CSS can override). `.doc-preview-frame` background set to `#525659` (matches what native PDF viewers already show behind the white page) for the loading-flash/letterbox areas.
+
+### Repository Structure (current)
 
 ```
 dealops/
-  backend/
-    main.py                  — FastAPI app entrypoint
-    models.py                — SQLAlchemy classes: User, Deal, DealRoom, Document, Message, Checkpoint
-    schemas.py                — Pydantic request/response shapes
-    database.py               — SQLite connection setup
-    seed_data.py               — inserts the hardcoded demo users (and demo deals) on first run
-    routes/
-      auth.py                  — login endpoint
-      deals.py                  — create/list/view deals
-      documents.py               — upload, download, folder listing (access-checked)
-      chat.py                    — Deal Room messages (incl. WebSocket for live updates)
-      checkpoints.py              — signal board state, Checker blind re-entry confirmation
-    ai/                        — ALL agentic/AI logic lives here, nowhere else
-      document_classifier.py      — FR-3: which folder does a document belong in
-      detail_extractor.py          — FR-5: pull borrower/lender account details
-      discrepancy_detector.py       — FR-12: does the document's stated recipient conflict with the assumed one
-    storage/                    — uploaded documents saved here (NOT web-served directly)
-  frontend/
-    src/
-      pages/                    — LoginPage, DealListPage, DealRoomPage
-      components/                — ChatPanel, DropZone, SignalBoard, DocumentDiffView
-      api.js                     — fetch calls to the backend
-      App.jsx, App.css
-  sample_documents/            — the fictional test PDFs (already created)
-  docs/                        — SPECIFICATIONS.md, TEST_CASES.md, CONVERSATION_LOG.md
+  src/
+    backend/                     — the harness: orchestration, auth, persistence, authorization
+      main.py                      — FastAPI app entrypoint
+      models.py                    — SQLAlchemy classes: User, Deal, DealMember, Message, Document, StandingInstruction
+      schemas.py                   — Pydantic request/response shapes
+      database.py                  — SQLite connection setup
+      security.py                  — password hashing, session tokens
+      ai_client.py                 — the ONLY file that talks to ai_api (thin HTTP client)
+      mock_loan_iq.py              — FICTIONAL Loan IQ integration, always succeeds
+      seed_data.py                 — inserts the hardcoded demo users on first run
+      routes/
+        auth.py                      — login endpoint
+        deals.py                     — create/list/view deals, get_deal_members(), get_or_create_deal_agent()
+        documents.py                  — upload (classify + extract via ai_client, auto-creates SSIs), download, listing
+        chat.py                       — messages, @mention handling, build_deal_context() (the "deal map")
+        users.py                      — GET /users (mention-dropdown source)
+        standing_instructions.py       — list SSIs, Checker-only blind-re-entry validate endpoint
+      storage/                     — uploaded documents saved here (NOT web-served directly, gitignored)
+    ai_api/                       — the brain: stateless reasoning, ZERO database access
+      main.py                       — FastAPI app: classify-document, extract-payment-details, commands, agent-respond
+      classifier.py                  — FR-3: which folder does a document belong in (keyword-based; swappable)
+      extractor.py                    — FR-5: payment/ABA extraction via agentkit's ModelFactory + LangChain structured output
+      agent_skills.py                — AGENT_COMMANDS registry (describe, docs, ssi); each skill takes a plain dict, returns text
+      agentkit/                       — vendored shared library (model routing, logging, agent/memory helpers) — see below
+      .env                            — ANTHROPIC_API_KEY etc., gitignored, never read/printed by Claude
+    frontend/
+      src/
+        pages/                    — LoginPage, DealListPage, DealRoomPage
+        components/                — Avatar, Navbar, Modal, AccordionItem
+        api.js                     — fetch calls to the backend (never to ai_api directly)
+        App.jsx, App.css
+  sample_documents/              — fictional test PDFs, also doubles as an eval fixture set
+  docs/                          — SPECIFICATIONS.md, TEST_CASES.md, CONVERSATION_LOG.md
 ```
+
+**The service boundary, and why it's drawn here:** `backend` is the harness — it owns auth, persistence, authorization rules (e.g. "only an Ops Manager's mention grants membership" — that's a deterministic rule, not AI, and stays here), and **context construction**: `build_deal_context()` in `routes/chat.py` is where the backend decides what a skill is allowed to see, assembled from the DB into a plain dict. `ai_api` is the brain — every function in it takes plain data in, returns text out, and has no DB session at all (can't have one — it's a separate process). This means:
+- Swapping keyword classification for a real model touches only `ai_api/classifier.py`.
+- Adding an agent skill is one entry in `ai_api/agent_skills.py`'s `AGENT_COMMANDS` — no backend change needed unless the skill needs data not already in the context payload.
+- If `ai_api` is down, uploads/chat/membership still work — classification just needs to degrade gracefully (not yet handled — see open items below).
+
+**Gotcha worth remembering:** Python venvs bake absolute paths into `bin/pip`'s shebang and `pyvenv.cfg`. Moving `backend/` → `src/backend/` via `git mv` moved the venv directory too, but broke it — `pip`/`python` inside pointed at the old path. Venvs aren't relocatable; had to `rm -rf venv && python3 -m venv venv` fresh at the new location. Same would apply to `src/ai_api/venv/` if it's ever moved.
+
+**How to run it (three processes now, not two):**
+```bash
+# ai_api (port 8001)
+cd src/ai_api && python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8001
+
+# backend (port 8000) — separate terminal
+cd src/backend && python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python seed_data.py   # first run only
+uvicorn main:app --reload --port 8000
+
+# frontend (port 5173) — separate terminal
+cd src/frontend && npm install && npm run dev
+```
+`ai_client.py` hardcodes `http://localhost:8001` — fine for local dev, would need to become configurable before this goes anywhere near a real deployment.
+
+**Not yet done, worth flagging:** no retry/backoff or graceful-degradation if `ai_api` is unreachable (an upload would currently 500 if it's down, per the harness principles discussed with the founder); no eval harness yet formalizing `sample_documents/` as a classification test set; "agent skills" as a more formal capability system (beyond the current flat command dict) was explicitly deferred by the founder for later.
+
+**Dashboard task/mention badges (per-user, computed at read time):** `DealOut` now carries `has_pending_task`/`has_mention`, computed fresh in `build_deal_out()` for whoever is asking — never stored on the deal itself, since the same tile means something different to every viewer. `has_pending_task` is deliberately narrow: true only when `current_user.role == "checker"` and the deal has a `pending_checker_review` SSI — the only task type that exists so far. `has_mention` needed real read-tracking to be worth building (a badge that never clears is worse than no badge): a new `DealView(deal_id, user_id, last_viewed_at)` row, upserted in `GET /deals/{id}` (`mark_deal_viewed()`), compared against `@username` occurrences in messages newer than that timestamp. Opening a Deal Room is what clears its own "@" badge.
+
+**Checker evidence + highlighting — blind re-entry stays exactly as it was.** The founder asked to unmask the account number for the Checker, then immediately retracted that ("wait... I like the blind re-entry principle... keep it") — `masked_account_number` and the re-type-to-confirm flow in `standing_instructions.py` are untouched. What *did* ship: an "Evidence" link (document icon) on every SSI, pointing at the source document — and a new `GET /deals/{id}/standing-instructions/{ssi_id}/highlighted-document` endpoint that opens that same PDF with the exact spots the extraction read from (account holder, bank name, account number, routing number) marked with real PDF highlight annotations via PyMuPDF (`backend/pdf_highlight.py`, `search_for()` + `add_highlight_annot()`). This deliberately avoided a bigger, riskier rewrite: the existing preview is a plain `<iframe>` over the browser's native PDF viewer, which the app has no way to inject highlights into from outside — baking the highlight into the PDF bytes server-side sidesteps that entirely, no frontend rendering change needed. Only handles PDFs today (checked via content-type/extension, falls back to serving the file unmodified) — Word/Excel uploads, mentioned as a near-future addition, aren't handled by this or by `ai_api/classifier.py`'s text extraction yet.
 
 Every file under `backend/ai/` is the *only* place that "AI" logic is allowed to live — `routes/documents.py` calls `ai.document_classifier.classify(...)`, it never contains classification logic itself. This is what makes "swap the mock logic for a real model later" actually true rather than aspirational.
 - **Document security:** uploaded documents are stored outside any public web path and served only through an authenticated endpoint that checks Deal Room membership; Deal Room conversations are logged per FR-7 (append-only, no edit/delete that erases history).

@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
-import { FaPaperPlane, FaBuilding, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaDownload } from "react-icons/fa";
+import { FaPaperPlane, FaBuilding, FaIndustry, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaDownload, FaComments, FaFlag, FaRobot, FaUserTie, FaUniversity, FaEye, FaArrowLeft, FaCheckCircle, FaHighlighter } from "react-icons/fa";
 import {
   getDeal,
   listMessages,
@@ -12,15 +12,35 @@ import {
   uploadDocuments,
   downloadDocument,
   fetchDocumentBlob,
+  fetchHighlightedDocumentBlob,
   listAgentCommands,
+  listStandingInstructions,
+  validateStandingInstruction,
+  listDealActivity,
 } from "../api";
 import Avatar from "../components/Avatar";
 import AccordionItem from "../components/AccordionItem";
+import Modal from "../components/Modal";
 
-const PRODUCT_META = {
-  commercial_loan: { label: "Commercial Loan", icon: FaBuilding },
-  real_estate_loan: { label: "Real Estate Loan", icon: FaHome },
+const ACTIVITY_ICONS = {
+  deal_created: FaFlag,
+  llm_call: FaRobot,
+  message: FaComments,
 };
+
+const SSI_STATUS_LABELS = {
+  pending_checker_review: "Pending review",
+  checker_validated: "Validated",
+  rejected: "Rejected",
+};
+
+// Each product type gets its own icon + color, not one shared blue — a
+// factory reads oddly in the same blue used for a house.
+const PRODUCT_META = {
+  commercial_loan: { label: "Commercial Loan", icon: FaIndustry, iconBg: "#fef3c7", iconColor: "#d97706" },
+  real_estate_loan: { label: "Real Estate Loan", icon: FaHome, iconBg: "#eff6ff", iconColor: "#2563eb" },
+};
+const DEFAULT_PRODUCT_META = { icon: FaBuilding, iconBg: "#eff6ff", iconColor: "#2563eb" };
 
 const ROLE_LABELS = {
   deal_team: "Deal Team",
@@ -73,6 +93,11 @@ function DealRoomPage({ user }) {
   const [members, setMembers] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [documents, setDocuments] = useState([]);
+  const [standingInstructions, setStandingInstructions] = useState([]);
+  const [activity, setActivity] = useState([]);
+  const [validatingSsi, setValidatingSsi] = useState(null);
+  const [validateInput, setValidateInput] = useState("");
+  const [validating, setValidating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -84,6 +109,9 @@ function DealRoomPage({ user }) {
   const [commandQuery, setCommandQuery] = useState(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [showDocPanel, setShowDocPanel] = useState(true);
+  const [showChatPanel, setShowChatPanel] = useState(true);
+  const [rightPanelView, setRightPanelView] = useState("chat"); // "chat" | "ssi-borrower" | "ssi-lender"
+  const [ssiDetailId, setSsiDetailId] = useState(null);
   const chatBoxRef = useRef(null);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
@@ -109,6 +137,23 @@ function DealRoomPage({ user }) {
     listMessages(dealId).then(setMessages);
     listDealMembers(dealId).then(setMembers);
     listDocuments(dealId).then(setDocuments);
+    listStandingInstructions(dealId).then(setStandingInstructions);
+    listDealActivity(dealId).then(setActivity);
+  }
+
+  async function handleValidateSubmit(event) {
+    event.preventDefault();
+    setValidating(true);
+    try {
+      await validateStandingInstruction(dealId, validatingSsi.id, validateInput);
+      setValidatingSsi(null);
+      setValidateInput("");
+      refresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setValidating(false);
+    }
   }
 
   const onDrop = useCallback(
@@ -162,6 +207,23 @@ function DealRoomPage({ user }) {
     setPreviewUrl(null);
   }
 
+  // The evidence view for an SSI: same source document, but with the exact
+  // spots the extraction read from marked in light green — never the value
+  // itself, just where to look. Point-and-call, not copy-and-paste.
+  async function handleViewEvidence(ssi) {
+    setPreviewLoading(true);
+    setShowDocPanel(true);
+    try {
+      const blob = await fetchHighlightedDocumentBlob(dealId, ssi.id);
+      setPreviewDoc({ id: ssi.document_id, original_filename: ssi.document_filename });
+      setPreviewUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
   // Only auto-scroll to the newest message if the user is already near the
   // bottom — otherwise a background poll would keep yanking them back down
   // while they're reading older messages.
@@ -186,6 +248,40 @@ function DealRoomPage({ user }) {
     [mentionPool]
   );
   const memberIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
+
+  // FR-3's folder classification is the natural Borrower/Lender split — no
+  // separate party-type field needed, the source document already carries it.
+  const borrowerSsis = useMemo(
+    () => standingInstructions.filter((s) => s.document_folder === "Borrower"),
+    [standingInstructions]
+  );
+  const lenderSsis = useMemo(
+    () => standingInstructions.filter((s) => s.document_folder === "Lenders"),
+    [standingInstructions]
+  );
+  const borrowerPendingCount = useMemo(
+    () => borrowerSsis.filter((s) => s.status === "pending_checker_review").length,
+    [borrowerSsis]
+  );
+  const lenderPendingCount = useMemo(
+    () => lenderSsis.filter((s) => s.status === "pending_checker_review").length,
+    [lenderSsis]
+  );
+  const activeSsiList = rightPanelView === "ssi-borrower" ? borrowerSsis : rightPanelView === "ssi-lender" ? lenderSsis : [];
+  const detailSsi = activeSsiList.find((s) => s.id === ssiDetailId) || null;
+
+  // One toggle for the whole right column, shared by the rail icons and the
+  // top-bar Chat button: clicking the view that's already open closes the
+  // panel; clicking a different view switches content without closing.
+  function toggleRightPanel(view) {
+    if (showChatPanel && rightPanelView === view) {
+      setShowChatPanel(false);
+    } else {
+      setRightPanelView(view);
+      setSsiDetailId(null);
+      setShowChatPanel(true);
+    }
+  }
 
   const mentionSuggestions = useMemo(() => {
     if (mentionQuery === null) return [];
@@ -265,23 +361,33 @@ function DealRoomPage({ user }) {
     return <p className="muted" style={{ padding: "2rem" }}>Loading deal room...</p>;
   }
 
-  const meta = PRODUCT_META[deal.product_type] || { label: deal.product_type, icon: FaBuilding };
+  const meta = { label: deal.product_type, ...DEFAULT_PRODUCT_META, ...PRODUCT_META[deal.product_type] };
   const Icon = meta.icon;
 
   return (
     <div className="deal-room-page-v2">
       <div className="deal-top-bar">
         <div className="deal-top-bar-main">
-          <div className="deal-room-icon">
+          <div className="deal-room-icon" style={{ background: meta.iconBg, color: meta.iconColor }}>
             <Icon />
           </div>
           <h1>{deal.title}</h1>
           <span className="muted">{deal.reference} · {meta.label}</span>
           <span className={`status-pill status-${deal.status}`}>{deal.status}</span>
         </div>
-        <button className="btn-ghost drawer-trigger" onClick={() => setShowDrawer(true)} title="Deal details">
-          <FaBars />
-        </button>
+        <div className="deal-top-bar-actions">
+          <button
+            type="button"
+            className={`chat-toggle-btn ${showChatPanel && rightPanelView === "chat" ? "active" : ""}`}
+            onClick={() => toggleRightPanel("chat")}
+            title="Toggle chat"
+          >
+            <FaComments /> Chat
+          </button>
+          <button className="btn-ghost drawer-trigger" onClick={() => setShowDrawer(true)} title="Deal details">
+            <FaBars />
+          </button>
+        </div>
       </div>
 
       <div className="deal-room-layout">
@@ -294,9 +400,42 @@ function DealRoomPage({ user }) {
           >
             <FaFolder />
           </button>
+          <button
+            type="button"
+            className={`icon-rail-btn chat-rail-btn ${showChatPanel && rightPanelView === "chat" ? "active" : ""}`}
+            onClick={() => toggleRightPanel("chat")}
+            title="Chat"
+          >
+            <FaComments />
+          </button>
+          <button
+            type="button"
+            className={`icon-rail-btn ${showChatPanel && rightPanelView === "ssi-borrower" ? "active" : ""}`}
+            onClick={() => toggleRightPanel("ssi-borrower")}
+            title="SSI — Borrower"
+          >
+            <FaUserTie />
+            {borrowerPendingCount > 0 && <span className="rail-badge">{borrowerPendingCount}</span>}
+          </button>
+          <button
+            type="button"
+            className={`icon-rail-btn ${showChatPanel && rightPanelView === "ssi-lender" ? "active" : ""}`}
+            onClick={() => toggleRightPanel("ssi-lender")}
+            title="SSI — Lender"
+          >
+            <FaUniversity />
+            {lenderPendingCount > 0 && <span className="rail-badge">{lenderPendingCount}</span>}
+          </button>
         </div>
 
-      <div className={`deal-room-body-v2 ${showDocPanel ? "with-doc-panel" : ""}`} {...getRootProps()}>
+      <div
+        className="deal-room-body-v2"
+        style={{
+          "--doc-col": showDocPanel ? "250px" : "0px",
+          "--chat-col": showChatPanel ? "380px" : "0px",
+        }}
+        {...getRootProps()}
+      >
         <input {...getInputProps({ style: { display: "none" } })} />
         {isDragActive && (
           <div className="drop-overlay">
@@ -305,7 +444,7 @@ function DealRoomPage({ user }) {
           </div>
         )}
 
-        <aside className="doc-explorer">
+        <aside className={`doc-explorer ${!showDocPanel ? "panel-collapsed" : ""}`}>
           <div className="doc-explorer-header">
             <h3>Documents</h3>
             <button type="button" className="btn-ghost" onClick={open} title="Upload documents" disabled={uploading}>
@@ -372,7 +511,11 @@ function DealRoomPage({ user }) {
                   </button>
                 </div>
               </div>
-              <iframe src={previewUrl} title={previewDoc.original_filename} className="doc-preview-frame" />
+              <iframe
+                src={`${previewUrl}#zoom=page-width`}
+                title={previewDoc.original_filename}
+                className="doc-preview-frame"
+              />
             </>
           ) : (
             <div className="doc-preview-empty">
@@ -382,7 +525,9 @@ function DealRoomPage({ user }) {
           )}
         </div>
 
-        <div className="chat-panel-v2">
+        <div className={`chat-panel-v2 ${!showChatPanel ? "panel-collapsed" : ""}`}>
+        {rightPanelView === "chat" && (
+          <>
           <div className="chat-box" ref={chatBoxRef}>
             {messages.length === 0 && (
               <p className="muted" style={{ textAlign: "center", marginTop: "2rem" }}>
@@ -445,6 +590,131 @@ function DealRoomPage({ user }) {
               </button>
             </div>
           </form>
+          </>
+        )}
+
+        {(rightPanelView === "ssi-borrower" || rightPanelView === "ssi-lender") && (
+          <div className="ssi-panel">
+            <div className="ssi-panel-header">
+              {detailSsi ? (
+                <>
+                  <button type="button" className="btn-ghost" onClick={() => setSsiDetailId(null)} title="Back">
+                    <FaArrowLeft />
+                  </button>
+                  <span className="ssi-panel-title">{detailSsi.account_holder_name || "Unnamed party"}</span>
+                </>
+              ) : (
+                <span className="ssi-panel-title">
+                  {rightPanelView === "ssi-borrower" ? "Borrower" : "Lender"} Standing Instructions ({activeSsiList.length})
+                </span>
+              )}
+            </div>
+
+            <div className="ssi-panel-body">
+              {detailSsi ? (
+                <div className="ssi-detail">
+                  <div className="sidebar-row">
+                    <span>Account holder</span>
+                    <strong>{detailSsi.account_holder_name || "—"}</strong>
+                  </div>
+                  <div className="sidebar-row">
+                    <span>Bank</span>
+                    <strong>{detailSsi.bank_name || "—"}</strong>
+                  </div>
+                  <div className="sidebar-row">
+                    <span>Account number</span>
+                    <strong>{detailSsi.masked_account_number}</strong>
+                  </div>
+                  <div className="sidebar-row">
+                    <span>Status</span>
+                    <span className={`status-pill ssi-status-${detailSsi.status}`}>
+                      {SSI_STATUS_LABELS[detailSsi.status] || detailSsi.status}
+                    </span>
+                  </div>
+                  <div className="sidebar-row">
+                    <span>Loan IQ reference</span>
+                    <strong>{detailSsi.loan_iq_reference || "—"}</strong>
+                  </div>
+                  <div className="sidebar-row">
+                    <span>Evidence</span>
+                    <button
+                      type="button"
+                      className="evidence-link"
+                      onClick={() => handleViewEvidence(detailSsi)}
+                      title="Open the source document with the detected bank details highlighted"
+                    >
+                      <FaHighlighter /> {detailSsi.document_filename}
+                    </button>
+                  </div>
+                  <div className="sidebar-row">
+                    <span>Added by</span>
+                    <strong>{detailSsi.added_by.name}</strong>
+                  </div>
+                  <div className="sidebar-row">
+                    <span>Submitted</span>
+                    <strong>{formatTime(detailSsi.submitted_at)}</strong>
+                  </div>
+                  {detailSsi.validated_by && (
+                    <div className="sidebar-row">
+                      <span>Validated by</span>
+                      <strong>{detailSsi.validated_by.name}</strong>
+                    </div>
+                  )}
+                  {detailSsi.validated_at && (
+                    <div className="sidebar-row">
+                      <span>Validated at</span>
+                      <strong>{formatTime(detailSsi.validated_at)}</strong>
+                    </div>
+                  )}
+
+                  {detailSsi.status === "pending_checker_review" && user.role === "checker" && (
+                    <button
+                      type="button"
+                      className="btn-approve"
+                      onClick={() => setValidatingSsi(detailSsi)}
+                    >
+                      <FaCheckCircle /> Approve
+                    </button>
+                  )}
+                </div>
+              ) : activeSsiList.length === 0 ? (
+                <p className="muted small" style={{ padding: "1rem" }}>No standing instructions yet.</p>
+              ) : (
+                <div className="ssi-list">
+                  {activeSsiList.map((ssi) => (
+                    <div key={ssi.id} className="ssi-row">
+                      <div className="ssi-row-main">
+                        <strong>{ssi.account_holder_name || "Unnamed party"}</strong>
+                        <span className="muted small">{ssi.masked_account_number}</span>
+                      </div>
+                      <div className="ssi-row-meta">
+                        <span className={`status-pill ssi-status-${ssi.status}`}>
+                          {SSI_STATUS_LABELS[ssi.status] || ssi.status}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          onClick={() => handleViewEvidence(ssi)}
+                          title="View evidence document"
+                        >
+                          <FaHighlighter />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          onClick={() => setSsiDetailId(ssi.id)}
+                          title="View details"
+                        >
+                          <FaEye />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         </div>
       </div>
       </div>
@@ -491,16 +761,67 @@ function DealRoomPage({ user }) {
                 <p className="muted small">Checkpoints and Checker verification are coming in a future update.</p>
               </AccordionItem>
 
-              <AccordionItem title="Standing Instructions">
-                <p className="muted small">Coming soon.</p>
-              </AccordionItem>
-
-              <AccordionItem title="Activity Log">
-                <p className="muted small">Coming soon.</p>
+              <AccordionItem title={`Activity Log (${activity.length})`}>
+                {activity.length === 0 ? (
+                  <p className="muted small">No activity yet.</p>
+                ) : (
+                  <div className="activity-list">
+                    {activity
+                      .slice()
+                      .reverse()
+                      .map((item, i) => {
+                        const Icon = ACTIVITY_ICONS[item.event_type] || FaFlag;
+                        const text =
+                          item.description.length > 120
+                            ? item.description.slice(0, 120) + "…"
+                            : item.description;
+                        return (
+                          <div key={i} className="activity-row">
+                            <Icon className="activity-icon" />
+                            <div className="activity-row-body">
+                              <div className="activity-row-meta">
+                                <strong>{item.actor_name}</strong>
+                                <span className="muted small">{formatTime(item.timestamp)}</span>
+                              </div>
+                              <p className="small">{text}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
               </AccordionItem>
             </div>
           </div>
         </div>
+      )}
+
+      {validatingSsi && (
+        <Modal
+          title={`Validate — ${validatingSsi.account_holder_name || "Unnamed party"}`}
+          onClose={() => {
+            setValidatingSsi(null);
+            setValidateInput("");
+          }}
+        >
+          <form className="modal-form" onSubmit={handleValidateSubmit}>
+            <p className="muted small">
+              Open the source document (left panel) and re-type the account number exactly as it
+              appears there. This is a blind check — the extracted number is never shown to you.
+            </p>
+            <label>Account number</label>
+            <input
+              value={validateInput}
+              onChange={(e) => setValidateInput(e.target.value)}
+              placeholder="Re-type the account number"
+              autoFocus
+              required
+            />
+            <button type="submit" disabled={validating}>
+              {validating ? "Checking..." : "Confirm"}
+            </button>
+          </form>
+        </Modal>
       )}
     </div>
   );

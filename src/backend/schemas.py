@@ -40,6 +40,11 @@ class DealOut(BaseModel):
     last_message_text: Optional[str] = None
     last_message_at: Optional[datetime] = None
     last_message_user: Optional[str] = None
+    # Both computed per requesting user at read time (see build_deal_out) —
+    # not stored on the deal itself, since they mean something different for
+    # every person looking at the dashboard.
+    has_pending_task: bool = False
+    has_mention: bool = False
 
     class Config:
         from_attributes = True
@@ -70,3 +75,39 @@ class DocumentOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class StandingInstructionOut(BaseModel):
+    id: int
+    document_id: int
+    document_filename: str
+    document_folder: str
+    added_by: UserOut
+    account_holder_name: Optional[str] = None
+    bank_name: Optional[str] = None
+    # Never the full number, even to a Checker — blind re-entry only means
+    # something if they're verifying against the source document, not a
+    # value the system shows them right next to the "confirm" button.
+    masked_account_number: str
+    status: str
+    loan_iq_reference: Optional[str] = None
+    submitted_at: datetime
+    validated_by: Optional[UserOut] = None
+    validated_at: Optional[datetime] = None
+
+
+class StandingInstructionValidateRequest(BaseModel):
+    entered_account_number: str
+
+
+class StandingInstructionValidateResponse(BaseModel):
+    match: bool
+    standing_instruction: StandingInstructionOut
+
+
+class ActivityItemOut(BaseModel):
+    timestamp: datetime
+    actor_name: str
+    actor_role: Optional[str] = None
+    event_type: str
+    description: str

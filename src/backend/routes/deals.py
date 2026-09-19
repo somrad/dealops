@@ -1,12 +1,14 @@
 import secrets
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Deal, DealMember, Document, Message, User
+from models import Deal, DealMember, DealView, Document, Message, StandingInstruction, User
 from schemas import DealCreate, DealOut, UserOut
 from security import get_current_user, hash_password
+from activity import log_activity
 
 router = APIRouter()
 
@@ -61,7 +63,37 @@ def get_deal_members(deal_id: int, db: Session) -> List[User]:
     return list(combined.values())
 
 
-def build_deal_out(deal: Deal, db: Session) -> dict:
+def has_pending_task_for(deal_id: int, current_user: User, db: Session) -> bool:
+    # The only task type that exists today is a Checker's SSI validation —
+    # this is deliberately narrow rather than a generic "tasks" table, since
+    # that's the only thing anyone is ever blocked waiting on right now.
+    if current_user.role != "checker":
+        return False
+    pending = db.query(StandingInstruction).filter(
+        StandingInstruction.deal_id == deal_id,
+        StandingInstruction.status == "pending_checker_review",
+    ).first()
+    return pending is not None
+
+
+def has_unread_mention_for(deal_id: int, current_user: User, db: Session) -> bool:
+    view = db.query(DealView).filter(
+        DealView.deal_id == deal_id, DealView.user_id == current_user.id
+    ).first()
+    since = view.last_viewed_at if view else datetime.min
+
+    token = f"@{current_user.username}"
+    recent = (
+        db.query(Message)
+        .filter(Message.deal_id == deal_id, Message.created_at > since)
+        .order_by(Message.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    return any(token in m.text for m in recent)
+
+
+def build_deal_out(deal: Deal, db: Session, current_user: User) -> dict:
     members = get_deal_members(deal.id, db)
     document_count = db.query(Document).filter(Document.deal_id == deal.id).count()
     last_message = (
@@ -81,6 +113,8 @@ def build_deal_out(deal: Deal, db: Session) -> dict:
         "last_message_text": last_message.text if last_message else None,
         "last_message_at": last_message.created_at if last_message else None,
         "last_message_user": last_message.user.name if last_message else None,
+        "has_pending_task": has_pending_task_for(deal.id, current_user, db),
+        "has_mention": has_unread_mention_for(deal.id, current_user, db),
     }
 
 
@@ -96,7 +130,7 @@ def list_my_deals(current_user: User = Depends(get_current_user), db: Session = 
         deal_ids = [m.deal_id for m in memberships]
         deals = db.query(Deal).filter(Deal.id.in_(deal_ids)).all()
 
-    return [build_deal_out(d, db) for d in deals]
+    return [build_deal_out(d, db, current_user) for d in deals]
 
 
 @router.post("/deals", response_model=DealOut)
@@ -115,7 +149,9 @@ def create_deal(payload: DealCreate, current_user: User = Depends(get_current_us
     db.add(DealMember(deal_id=deal.id, user_id=current_user.id))
     db.commit()
 
-    return build_deal_out(deal, db)
+    log_activity(db, deal.id, "deal_created", f"Deal room created by {current_user.name}.", actor_id=current_user.id)
+
+    return build_deal_out(deal, db, current_user)
 
 
 def require_deal_membership(deal_id: int, current_user: User, db: Session) -> Deal:
@@ -135,10 +171,25 @@ def require_deal_membership(deal_id: int, current_user: User, db: Session) -> De
     return deal
 
 
+def mark_deal_viewed(deal_id: int, current_user: User, db: Session) -> None:
+    # Opening a Deal Room is what clears its "@" badge on the dashboard —
+    # any mention older than this moment no longer counts as unread.
+    view = db.query(DealView).filter(
+        DealView.deal_id == deal_id, DealView.user_id == current_user.id
+    ).first()
+    if view is None:
+        db.add(DealView(deal_id=deal_id, user_id=current_user.id, last_viewed_at=datetime.utcnow()))
+    else:
+        view.last_viewed_at = datetime.utcnow()
+    db.commit()
+
+
 @router.get("/deals/{deal_id}", response_model=DealOut)
 def get_deal(deal_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     deal = require_deal_membership(deal_id, current_user, db)
-    return build_deal_out(deal, db)
+    out = build_deal_out(deal, db, current_user)
+    mark_deal_viewed(deal_id, current_user, db)
+    return out
 
 
 @router.get("/deals/{deal_id}/members", response_model=List[UserOut])

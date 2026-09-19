@@ -1,13 +1,24 @@
 # Python
-backend/venv/
+src/backend/venv/
+src/ai_api/venv/
 **/__pycache__/
 *.pyc
 
 # Dev database — regenerate with `python seed_data.py`
-backend/dealops.db
+src/backend/dealops.db
 
 # Uploaded documents — runtime data, not source
-backend/storage/
+src/backend/storage/
+
+# Log output — runtime, not source
+src/logs/
+
+# Secrets — real API keys live here, never committed
+.env
+**/.env
+
+# Frontend build output
+src/frontend/dist/
 
 # Editor / OS
 .vscode/

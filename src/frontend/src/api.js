@@ -76,6 +76,33 @@ export function listDocuments(dealId) {
   return apiRequest(`/deals/${dealId}/documents`);
 }
 
+export function listStandingInstructions(dealId) {
+  return apiRequest(`/deals/${dealId}/standing-instructions`);
+}
+
+export function validateStandingInstruction(dealId, ssiId, enteredAccountNumber) {
+  return apiRequest(`/deals/${dealId}/standing-instructions/${ssiId}/validate`, {
+    method: "POST",
+    body: JSON.stringify({ entered_account_number: enteredAccountNumber }),
+  });
+}
+
+export function listDealActivity(dealId) {
+  return apiRequest(`/deals/${dealId}/activity`);
+}
+
+// The evidence view for an SSI: the source document with the exact spots
+// the extraction read from highlighted — same auth-header-then-blob pattern
+// as fetchDocumentBlob.
+export async function fetchHighlightedDocumentBlob(dealId, ssiId) {
+  const token = getToken();
+  const response = await fetch(`${API_BASE}/deals/${dealId}/standing-instructions/${ssiId}/highlighted-document`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) throw new Error("Could not load evidence document");
+  return response.blob();
+}
+
 // Multipart upload can't go through apiRequest — it always sets a JSON
 // Content-Type, which breaks the multipart boundary the browser needs to set.
 export async function uploadDocuments(dealId, files) {

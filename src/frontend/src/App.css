@@ -121,6 +121,39 @@ button:disabled {
   box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.18);
 }
 
+.deal-top-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Chat is core to the product, so its toggle gets a labeled button (icon +
+   text) in the top bar, not just an icon in the rail — the rail one is a
+   quick reach; this one is the "it's still here, right where you'd look"
+   one, and both control the same panel. */
+.chat-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  /* Same green family as .status-open — muted, not WhatsApp's saturated
+     brand green. Chat carries this tint standingly, not just when active. */
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.chat-toggle-btn:hover {
+  background: #dcfce7;
+}
+
+.chat-toggle-btn.active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
 input,
 select {
   width: 100%;
@@ -435,6 +468,7 @@ label {
 }
 
 .deal-card-v {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
@@ -464,6 +498,43 @@ label {
 .deal-card-v .deal-section {
   border-top: 1px solid var(--color-surface);
   padding-top: 0.6rem;
+}
+
+/* Per-user "you have something to do here" signal — big, unmissable, gone
+   for anyone the badge doesn't apply to. Card view pins it to the corner;
+   list view just lets it sit as the last item in the row (already right-
+   aligned since everything before it in the flex row is flex:1). */
+.deal-badges {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.deal-card-v .deal-badges {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.85rem;
+}
+
+.deal-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  font-size: 1.05rem;
+  box-shadow: var(--shadow-md);
+}
+
+.deal-badge-task {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.deal-badge-mention {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
 }
 
 /* Layout toggle (burger menu) */
@@ -545,6 +616,136 @@ label {
 .status-closed {
   background: #f3f4f6;
   color: #6b7280;
+}
+
+.ssi-status-pending_checker_review {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.ssi-status-checker_validated {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.ssi-status-rejected {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.ssi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ssi-row {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.ssi-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ssi-row-main strong {
+  font-size: 0.85rem;
+}
+
+.ssi-row-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+/* SSI panel — occupies the same grid column as chat, swapped in when a rail
+   SSI icon is active. Mirrors chat-panel-v2's header/body split. */
+.ssi-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.ssi-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ssi-panel-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+
+.ssi-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.25rem;
+}
+
+.ssi-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.btn-approve {
+  margin-top: 1.25rem;
+  justify-content: center;
+  background: #16a34a;
+}
+
+.btn-approve:hover {
+  background: #15803d;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.activity-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+}
+
+.activity-icon {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.activity-row-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.activity-row-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.activity-row-meta strong {
+  font-size: 0.82rem;
+}
+
+.activity-row-body p {
+  margin-top: 0.1rem;
+  overflow-wrap: break-word;
 }
 
 /* Empty state */
@@ -674,6 +875,7 @@ label {
 }
 
 .icon-rail-btn {
+  position: relative;
   width: 38px;
   height: 38px;
   display: flex;
@@ -684,6 +886,24 @@ label {
   border-radius: 8px;
   padding: 0;
   flex-shrink: 0;
+}
+
+.rail-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: white;
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .icon-rail-btn:hover {
@@ -697,15 +917,33 @@ label {
   box-shadow: 0 0 0 1px var(--color-border);
 }
 
-/* Grid tracks: doc explorer (0 = collapsed, 250px = open) | preview | chat.
-   Keeping the doc-explorer track always present (just 0-width when closed)
-   instead of conditionally rendering it is what makes the collapse animate
-   smoothly — grid-template-columns transitions cleanly when the track COUNT
-   stays the same and only a track's size changes. */
+/* Same muted green family as .status-open / .chat-toggle-btn — chat carries
+   this tint standingly (not just when active), placed after .icon-rail-btn's
+   own rules so it actually wins the cascade for the shared properties. */
+.chat-rail-btn {
+  color: #16a34a;
+}
+
+.chat-rail-btn:hover {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.chat-rail-btn.active {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+/* Grid tracks: doc explorer | preview | chat, driven by --doc-col/--chat-col
+   CSS custom properties set inline per panel's open/closed state (0px or
+   the panel's real width). Keeping both tracks always present — just 0-width
+   when closed — instead of conditionally rendering them is what makes the
+   collapse animate smoothly: grid-template-columns only transitions cleanly
+   when the track COUNT stays constant and only a track's size changes. */
 .deal-room-body-v2 {
   position: relative;
   display: grid;
-  grid-template-columns: 0 1fr 380px;
+  grid-template-columns: var(--doc-col, 0px) 1fr var(--chat-col, 380px);
   transition: grid-template-columns 0.2s ease;
   gap: 1.5rem;
   padding: 1.5rem 2rem;
@@ -715,15 +953,19 @@ label {
   height: 100%;
 }
 
-.deal-room-body-v2.with-doc-panel {
-  grid-template-columns: 250px 1fr 380px;
-}
-
 /* The dropzone's hidden file input is a direct child of the grid above —
    belt-and-suspenders so it can never become a stray grid item and shove
-   doc-explorer/chat-panel-v2 out of their columns again. */
+   the panels out of their columns again. */
 .deal-room-body-v2 > input {
   display: none;
+}
+
+.doc-explorer,
+.chat-panel-v2 {
+  min-width: 0;
+  overflow-x: hidden;
+  opacity: 1;
+  transition: opacity 0.15s ease;
 }
 
 .doc-explorer {
@@ -732,19 +974,15 @@ label {
   border-radius: var(--radius);
   padding: 1.25rem;
   height: 100%;
-  min-width: 0;
   overflow-y: auto;
-  overflow-x: hidden;
-  opacity: 1;
-  transition: opacity 0.15s ease;
 }
 
-/* Belt-and-suspenders for the collapse: even if the grid track doesn't
-   shrink to a true 0px (border-box rounding, a stray min-content edge
-   case), stripping the border/padding and fading to invisible guarantees
-   nothing is left to render — the earlier fix relied on width alone and
-   still left a visible sliver. */
-.deal-room-body-v2:not(.with-doc-panel) .doc-explorer {
+/* Belt-and-suspenders for the collapse: even if a grid track doesn't shrink
+   to a true 0px (border-box rounding, a stray min-content edge case),
+   stripping the border/padding and fading to invisible guarantees nothing
+   is left to render or click — relying on width alone once left a visible
+   sliver. Applied to whichever panel (doc explorer or chat) is closed. */
+.panel-collapsed {
   border: none;
   padding: 0;
   opacity: 0;
@@ -866,6 +1104,12 @@ label {
   flex: 1;
   border: none;
   width: 100%;
+  /* Matches the grey canvas most native PDF viewers already show behind the
+     white page — also covers the loading flash before the PDF paints.
+     The in-viewer zoom itself is driven by the #zoom=page-width URL
+     fragment on the iframe src (Chrome/Firefox honor it; Safari may not —
+     that's the browser's own PDF viewer, not something CSS can override). */
+  background: #525659;
 }
 
 .doc-preview-empty {
@@ -1109,6 +1353,27 @@ label {
 
 .sidebar-row span {
   color: var(--color-text-muted);
+}
+
+/* Points at the document an SSI was inferred from — never the extracted
+   value, just where to go verify it. Green like the highlight it opens to. */
+.evidence-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #16a34a;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.evidence-link:hover {
+  color: #15803d;
 }
 
 .member-list {

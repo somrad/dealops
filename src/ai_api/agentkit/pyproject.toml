@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "agentkit"
+version = "0.1.0"
+description = "Shared toolkit for AI agents — model routing, logging, A2A server boilerplate"
+requires-python = ">=3.10"
+dependencies = [
+    "langchain-anthropic",
+    "langchain-openai",
+    "langchain-ollama",
+    "python-dotenv",
+    "langgraph",
+    "langgraph-checkpoint-sqlite",
+    "aiosqlite",
+    "httpx",
+]
+
+[tool.setuptools]
+packages = ["agentkit"]
+
+[tool.setuptools.package-dir]
+agentkit = "."

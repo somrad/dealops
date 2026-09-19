@@ -1,0 +1,86 @@
+from typing import List, Optional
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from classifier import classify_document, extract_text
+from agent_skills import AGENT_COMMANDS, handle_agent_mention
+from extractor import extract_payment_details, MODEL_NAME, MODEL_PROVIDER
+
+app = FastAPI(title="dealops ai_api")
+
+# Only the backend calls this service — no browser ever talks to it directly.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.post("/classify-document")
+async def classify_document_endpoint(file: UploadFile = File(...)):
+    content = await file.read()
+    text_content = extract_text(content, file.content_type, file.filename)
+    folder = classify_document(file.filename, text_content)
+    return {"folder": folder}
+
+
+@app.post("/extract-payment-details")
+async def extract_payment_details_endpoint(file: UploadFile = File(...)):
+    content = await file.read()
+    text_content = extract_text(content, file.content_type, file.filename)
+    parties = extract_payment_details(text_content)
+    # extract_payment_details() skips the LLM call entirely for empty text —
+    # mirror that here so the response doesn't claim a model ran when it didn't.
+    call_made = bool(text_content.strip())
+    return {
+        "parties": parties,
+        "model_provider": MODEL_PROVIDER if call_made else None,
+        "model_name": MODEL_NAME if call_made else None,
+    }
+
+
+@app.get("/commands")
+def list_commands():
+    return [{"name": name, "help": info["help"]} for name, info in AGENT_COMMANDS.items()]
+
+
+class DocumentContext(BaseModel):
+    filename: str
+    folder: str
+
+
+class StandingInstructionContext(BaseModel):
+    account_holder_name: Optional[str] = None
+    status: str
+    loan_iq_reference: Optional[str] = None
+
+
+class DealContext(BaseModel):
+    title: str
+    reference: str
+    product_type: str
+    status: str
+    member_count: int
+    message_count: int
+    documents: List[DocumentContext] = []
+    standing_instructions: List[StandingInstructionContext] = []
+
+
+class AgentRespondRequest(BaseModel):
+    command_text: str
+    agent_name: str
+    agent_username: str
+    deal: DealContext
+
+
+@app.post("/agent-respond")
+def agent_respond(payload: AgentRespondRequest):
+    reply_text = handle_agent_mention(
+        payload.command_text,
+        payload.agent_name,
+        payload.agent_username,
+        payload.deal.model_dump(),
+    )
+    return {"reply_text": reply_text}

@@ -5,4 +5,5 @@ pydantic
 bcrypt
 python-multipart
 python-dotenv
-pypdf
+httpx
+pymupdf

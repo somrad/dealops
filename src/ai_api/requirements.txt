@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pypdf
+python-multipart
+
+# agentkit (vendored in agentkit/) dependencies
+langchain-anthropic
+langchain-openai
+langchain-ollama
+python-dotenv
+langgraph
+langgraph-checkpoint-sqlite
+aiosqlite
+httpx

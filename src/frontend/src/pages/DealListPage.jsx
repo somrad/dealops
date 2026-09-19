@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaPlus, FaBuilding, FaHome, FaInbox, FaFileAlt, FaCommentDots, FaThLarge, FaListUl } from "react-icons/fa";
+import { FaPlus, FaBuilding, FaIndustry, FaHome, FaInbox, FaFileAlt, FaCommentDots, FaThLarge, FaListUl, FaTasks, FaAt } from "react-icons/fa";
 import { listDeals, createDeal } from "../api";
 import Modal from "../components/Modal";
 import Avatar from "../components/Avatar";
 
+// Each product type gets its own icon + color, not one shared blue — a
+// factory reads oddly in the same blue used for a house.
 const PRODUCT_META = {
-  commercial_loan: { label: "Commercial Loan", icon: FaBuilding },
-  real_estate_loan: { label: "Real Estate Loan", icon: FaHome },
+  commercial_loan: { label: "Commercial Loan", icon: FaIndustry, iconBg: "#fef3c7", iconColor: "#d97706" },
+  real_estate_loan: { label: "Real Estate Loan", icon: FaHome, iconBg: "#eff6ff", iconColor: "#2563eb" },
 };
+const DEFAULT_PRODUCT_META = { icon: FaBuilding, iconBg: "#eff6ff", iconColor: "#2563eb" };
 
 function timeAgo(isoString) {
   const diffMs = Date.now() - new Date(isoString).getTime();
@@ -18,6 +21,27 @@ function timeAgo(isoString) {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+// A big, unmissable signal that the current user specifically has something
+// to do in this deal — a pending Checker task, or a mention aimed at them.
+// Absent for everyone else looking at the same tile.
+function DealBadges({ deal }) {
+  if (!deal.has_pending_task && !deal.has_mention) return null;
+  return (
+    <div className="deal-badges">
+      {deal.has_pending_task && (
+        <span className="deal-badge deal-badge-task" title="You have a pending task in this deal">
+          <FaTasks />
+        </span>
+      )}
+      {deal.has_mention && (
+        <span className="deal-badge deal-badge-mention" title="You were mentioned in this deal">
+          <FaAt />
+        </span>
+      )}
+    </div>
+  );
 }
 
 // The members / documents / last-message sections are identical in both the
@@ -145,12 +169,13 @@ function DealListPage({ user }) {
       ) : viewMode === "grid" ? (
         <div className="deal-card-grid">
           {deals.map((deal) => {
-            const meta = PRODUCT_META[deal.product_type] || { label: deal.product_type, icon: FaBuilding };
+            const meta = { label: deal.product_type, ...DEFAULT_PRODUCT_META, ...PRODUCT_META[deal.product_type] };
             const Icon = meta.icon;
             return (
               <div key={deal.id} className="deal-card-v" onClick={() => navigate(`/deals/${deal.id}`)}>
+                <DealBadges deal={deal} />
                 <div className="deal-card-v-header">
-                  <div className="deal-card-icon">
+                  <div className="deal-card-icon" style={{ background: meta.iconBg, color: meta.iconColor }}>
                     <Icon />
                   </div>
                   <div>
@@ -170,12 +195,12 @@ function DealListPage({ user }) {
       ) : (
         <div className="deal-bar-list">
           {deals.map((deal) => {
-            const meta = PRODUCT_META[deal.product_type] || { label: deal.product_type, icon: FaBuilding };
+            const meta = { label: deal.product_type, ...DEFAULT_PRODUCT_META, ...PRODUCT_META[deal.product_type] };
             const Icon = meta.icon;
             return (
               <div key={deal.id} className="deal-bar" onClick={() => navigate(`/deals/${deal.id}`)}>
                 <div className="deal-bar-summary">
-                  <div className="deal-card-icon">
+                  <div className="deal-card-icon" style={{ background: meta.iconBg, color: meta.iconColor }}>
                     <Icon />
                   </div>
                   <div>
@@ -188,6 +213,7 @@ function DealListPage({ user }) {
                   </div>
                 </div>
                 <DealSections deal={deal} />
+                <DealBadges deal={deal} />
               </div>
             );
           })}

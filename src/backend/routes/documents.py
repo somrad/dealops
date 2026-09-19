@@ -6,11 +6,13 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Document, Message, User
+from models import Document, Message, StandingInstruction, User
 from schemas import DocumentOut
 from security import get_current_user
 from routes.deals import require_deal_membership, get_or_create_deal_agent
-from ai.document_classifier import classify_document, extract_text
+from activity import log_activity
+import ai_client
+import mock_loan_iq
 
 router = APIRouter()
 
@@ -44,8 +46,7 @@ def upload_documents(
         with open(stored_path, "wb") as f:
             f.write(content)
 
-        text_content = extract_text(stored_path, upload.content_type)
-        folder = classify_document(upload.filename, text_content)
+        folder = ai_client.classify_document(upload.filename, content, upload.content_type)
 
         document = Document(
             deal_id=deal_id,
@@ -67,6 +68,52 @@ def upload_documents(
         db.commit()
         db.add(Message(deal_id=deal_id, user_id=agent.id, text=f'Filed "{upload.filename}" under {folder}.'))
         db.commit()
+
+        # FR-5: try extraction on every upload, not just Borrower/Lenders —
+        # simpler than special-casing by folder, and documents with no
+        # payment details just come back with an empty party list.
+        extraction = ai_client.extract_payment_details(upload.filename, content, upload.content_type)
+        parties = extraction["parties"]
+
+        if extraction["model_name"]:
+            log_activity(
+                db, deal_id, "llm_call",
+                f"LLM extraction call on {upload.filename} (model: {extraction['model_provider']}/{extraction['model_name']}) — "
+                f"found {len(parties)} payment part{'y' if len(parties) == 1 else 'ies'}.",
+                actor_id=agent.id,
+            )
+
+        for party in parties:
+            ssi = StandingInstruction(
+                deal_id=deal_id,
+                document_id=document.id,
+                account_holder_name=party.get("account_holder_name"),
+                bank_name=party.get("bank_name"),
+                account_number=party["account_number"],
+                routing_number=party["routing_number"],
+            )
+            db.add(ssi)
+            db.commit()
+            db.refresh(ssi)
+
+            loan_iq_result = mock_loan_iq.submit_standing_instruction(
+                ssi.account_holder_name, ssi.bank_name, ssi.account_number, ssi.routing_number
+            )
+            ssi.loan_iq_reference = loan_iq_result["loan_iq_reference"]
+            db.commit()
+
+            who = ssi.account_holder_name or "an unnamed party"
+            last4 = ssi.account_number[-4:] if len(ssi.account_number) >= 4 else ssi.account_number
+            db.add(Message(
+                deal_id=deal_id,
+                user_id=agent.id,
+                text=(
+                    f"Extracted payment details for {who} from {upload.filename} and submitted a standing "
+                    f"instruction to Loan IQ (account ...{last4}, reference {ssi.loan_iq_reference}). "
+                    f"Awaiting Checker validation."
+                ),
+            ))
+            db.commit()
 
     return uploaded
 

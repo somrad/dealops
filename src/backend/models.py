@@ -67,3 +67,47 @@ class Document(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
     uploaded_by = relationship("User")
+
+
+class StandingInstruction(Base):
+    __tablename__ = "standing_instructions"
+
+    id = Column(Integer, primary_key=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    account_holder_name = Column(String, nullable=True)
+    bank_name = Column(String, nullable=True)
+    account_number = Column(String, nullable=False)
+    routing_number = Column(String, nullable=False)
+    # pending_checker_review, checker_validated, rejected
+    status = Column(String, default="pending_checker_review")
+    loan_iq_reference = Column(String, nullable=True)
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+    validated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    validated_at = Column(DateTime, nullable=True)
+
+    document = relationship("Document")
+    validated_by = relationship("User", foreign_keys=[validated_by_id])
+
+
+class DealView(Base):
+    __tablename__ = "deal_views"
+
+    id = Column(Integer, primary_key=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    last_viewed_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ActivityLog(Base):
+    __tablename__ = "activity_log"
+
+    id = Column(Integer, primary_key=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False)
+    # Null actor = a system event with no single human responsible.
+    actor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    event_type = Column(String, nullable=False)  # deal_created, llm_call, ...
+    description = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    actor = relationship("User")
