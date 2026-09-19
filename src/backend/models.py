@@ -73,6 +73,10 @@ class Document(Base):
     content_type = Column(String, nullable=True)
     size_bytes = Column(Integer, nullable=True)
     uploaded_at = Column(DateTime, default=datetime.utcnow)
+    # Self-referential: set on the NEW document, pointing at the one it
+    # replaces — set at upload time by matching normalized filename within
+    # the same deal+folder (see normalize_version_key in routes/documents.py).
+    supersedes_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
 
     uploaded_by = relationship("User")
 

@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -7,16 +8,29 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Document, Message, StandingInstruction, User
-from schemas import DocumentOut
+from schemas import DocumentOut, DocumentCompareOut
 from security import get_current_user
 from routes.deals import require_deal_membership, get_or_create_deal_agent
 from activity import log_activity
+from document_diff import extract_text_for_diff, build_diff_rows
 import ai_client
 import mock_loan_iq
 
 router = APIRouter()
 
 STORAGE_ROOT = os.path.join(os.path.dirname(__file__), "..", "storage")
+
+# Strips a trailing version-ish suffix ("_v1", "-v2", " (3)", " copy") from
+# the filename stem so "lender_wire_instructions_v1.pdf" and
+# "..._v2.pdf" normalize to the same family key. Deliberately simple — a
+# POC heuristic, not a general version-string parser.
+VERSION_SUFFIX = re.compile(r"([ _-]v\d+|\s*\(\d+\)|\s*copy)$", re.IGNORECASE)
+
+
+def normalize_version_key(filename: str) -> str:
+    stem, ext = os.path.splitext(filename)
+    stem = VERSION_SUFFIX.sub("", stem).strip()
+    return f"{stem.lower()}{ext.lower()}"
 
 
 def deal_storage_path(deal_id: int) -> str:
@@ -48,6 +62,20 @@ def upload_documents(
 
         folder = ai_client.classify_document(upload.filename, content, upload.content_type)
 
+        # FR-6: does this filename (version suffix stripped) match an
+        # existing document already in this folder that nothing has
+        # superseded yet? If so, this upload is a new version of it, not a
+        # separate document — link the chain rather than filing it standalone.
+        key = normalize_version_key(upload.filename)
+        previous_head = None
+        for candidate in db.query(Document).filter(Document.deal_id == deal_id, Document.folder == folder).all():
+            if normalize_version_key(candidate.original_filename) != key:
+                continue
+            already_superseded = db.query(Document).filter(Document.supersedes_id == candidate.id).first()
+            if already_superseded is None:
+                previous_head = candidate
+                break
+
         document = Document(
             deal_id=deal_id,
             uploaded_by_id=current_user.id,
@@ -56,6 +84,7 @@ def upload_documents(
             folder=folder,
             content_type=upload.content_type,
             size_bytes=len(content),
+            supersedes_id=previous_head.id if previous_head else None,
         )
         db.add(document)
         db.commit()
@@ -66,7 +95,14 @@ def upload_documents(
         # automated classification result — same pattern as the mention flow.
         db.add(Message(deal_id=deal_id, user_id=current_user.id, text=f"Uploaded {upload.filename}"))
         db.commit()
-        db.add(Message(deal_id=deal_id, user_id=agent.id, text=f'Filed "{upload.filename}" under {folder}.', level="info"))
+        if previous_head is not None:
+            db.add(Message(
+                deal_id=deal_id, user_id=agent.id,
+                text=f'"{upload.filename}" is a new version of "{previous_head.original_filename}" — filed under {folder}, superseding it.',
+                level="info",
+            ))
+        else:
+            db.add(Message(deal_id=deal_id, user_id=agent.id, text=f'Filed "{upload.filename}" under {folder}.', level="info"))
         db.commit()
 
         # FR-5: try extraction on every upload, not just Borrower/Lenders —
@@ -128,6 +164,32 @@ def upload_documents(
 def list_documents(deal_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     require_deal_membership(deal_id, current_user, db)
     return db.query(Document).filter(Document.deal_id == deal_id).order_by(Document.uploaded_at).all()
+
+
+@router.get("/deals/{deal_id}/documents/compare", response_model=DocumentCompareOut)
+def compare_documents(
+    deal_id: int,
+    doc_a: int,
+    doc_b: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_deal_membership(deal_id, current_user, db)
+    documents = db.query(Document).filter(Document.id.in_([doc_a, doc_b]), Document.deal_id == deal_id).all()
+    by_id = {d.id: d for d in documents}
+    if doc_a not in by_id or doc_b not in by_id:
+        raise HTTPException(status_code=404, detail="Both documents must exist in this deal")
+
+    first, second = by_id[doc_a], by_id[doc_b]
+    storage = deal_storage_path(deal_id)
+    text_a = extract_text_for_diff(os.path.join(storage, first.stored_filename), first.content_type)
+    text_b = extract_text_for_diff(os.path.join(storage, second.stored_filename), second.content_type)
+
+    return {
+        "document_a": first,
+        "document_b": second,
+        "rows": build_diff_rows(text_a, text_b),
+    }
 
 
 @router.get("/deals/{deal_id}/documents/{document_id}/download")

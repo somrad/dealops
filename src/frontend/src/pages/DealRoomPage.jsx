@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
-import { FaPaperPlane, FaBuilding, FaIndustry, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaDownload, FaComments, FaFlag, FaRobot, FaUserTie, FaUniversity, FaEye, FaArrowLeft, FaCheckCircle, FaHighlighter } from "react-icons/fa";
+import { FaPaperPlane, FaBuilding, FaIndustry, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaDownload, FaComments, FaFlag, FaRobot, FaUserTie, FaUniversity, FaEye, FaArrowLeft, FaCheckCircle, FaHighlighter, FaExchangeAlt } from "react-icons/fa";
 import {
   getDeal,
   listMessages,
@@ -13,6 +13,7 @@ import {
   downloadDocument,
   fetchDocumentBlob,
   fetchHighlightedDocumentBlob,
+  compareDocuments,
   listAgentCommands,
   listStandingInstructions,
   validateStandingInstruction,
@@ -149,6 +150,10 @@ function DealRoomPage({ user }) {
   const [rightPanelView, setRightPanelView] = useState("chat"); // "chat" | "ssi-borrower" | "ssi-lender"
   const [ssiDetailId, setSsiDetailId] = useState(null);
   const [resizeTick, setResizeTick] = useState(0);
+  const [compareSelection, setCompareSelection] = useState([]);
+  const [compareResult, setCompareResult] = useState(null);
+  const [comparing, setComparing] = useState(false);
+  const [panelsBeforeCompare, setPanelsBeforeCompare] = useState(null);
   const chatBoxRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -250,6 +255,7 @@ function DealRoomPage({ user }) {
   }, [showDocPanel, showChatPanel]);
 
   async function handlePreviewClick(doc) {
+    setCompareResult(null);
     setPreviewLoading(true);
     try {
       const blob = await fetchDocumentBlob(dealId, doc.id);
@@ -265,6 +271,76 @@ function DealRoomPage({ user }) {
   function closePreview() {
     setPreviewDoc(null);
     setPreviewUrl(null);
+  }
+
+  // FR-6: at most 2 documents selected at a time for comparison — picking a
+  // 3rd drops the oldest selection rather than blocking the click.
+  function toggleCompareSelect(docId) {
+    setCompareSelection((prev) => {
+      if (prev.includes(docId)) return prev.filter((id) => id !== docId);
+      if (prev.length >= 2) return [prev[1], docId];
+      return [...prev, docId];
+    });
+  }
+
+  async function runCompare() {
+    if (compareSelection.length !== 2) return;
+    setComparing(true);
+    try {
+      // Older document (by upload time) always goes on the left, newer on
+      // the right — regardless of which order the two were checked in.
+      const [first, second] = compareSelection
+        .map((id) => documents.find((d) => d.id === id))
+        .sort((a, b) => new Date(a.uploaded_at) - new Date(b.uploaded_at));
+      const result = await compareDocuments(dealId, first.id, second.id);
+      setCompareResult(result);
+      setPreviewDoc(null);
+      setPreviewUrl(null);
+      // Compare mode gets the whole window — collapse the side panels,
+      // remembering their state so closing the diff can restore it.
+      setPanelsBeforeCompare({ doc: showDocPanel, chat: showChatPanel });
+      setShowDocPanel(false);
+      setShowChatPanel(false);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setComparing(false);
+    }
+  }
+
+  function closeCompare() {
+    setCompareResult(null);
+    setCompareSelection([]);
+    if (panelsBeforeCompare) {
+      setShowDocPanel(panelsBeforeCompare.doc);
+      setShowChatPanel(panelsBeforeCompare.chat);
+      setPanelsBeforeCompare(null);
+    }
+  }
+
+  // Shared by both a version family's head row and its greyed-out older
+  // versions — same file button + a checkbox for FR-6 compare-selection,
+  // just an extra "indented, under the tree line" class for old versions.
+  function renderDocRow(doc, indented = false) {
+    return (
+      <div key={doc.id} className={`doc-file-row ${indented ? "doc-version-child" : ""}`}>
+        <input
+          type="checkbox"
+          className="doc-compare-checkbox"
+          checked={compareSelection.includes(doc.id)}
+          onChange={() => toggleCompareSelect(doc.id)}
+          title="Select to compare"
+        />
+        <button
+          type="button"
+          className={`doc-file-link ${previewDoc?.id === doc.id ? "active" : ""}`}
+          onClick={() => handlePreviewClick(doc)}
+          title={doc.original_filename}
+        >
+          <FaFileAlt /> <span>{doc.original_filename}</span>
+        </button>
+      </div>
+    );
   }
 
   // The evidence view for an SSI: same source document, but with the exact
@@ -284,14 +360,15 @@ function DealRoomPage({ user }) {
     }
   }
 
-  // Newest message renders first (top of the list) — keep the user pinned
-  // to the top on a new arrival only if they're already near it, otherwise
-  // a background poll would yank them away while reading older messages.
+  // Only auto-scroll to the newest message if the user is already near the
+  // bottom — otherwise a background poll would keep yanking them back down
+  // while they're reading older messages.
   useEffect(() => {
     const container = chatBoxRef.current;
     if (!container) return;
-    if (container.scrollTop < 150) {
-      container.scrollTo({ top: 0, behavior: "smooth" });
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom < 150) {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
     }
   }, [messages]);
 
@@ -307,6 +384,30 @@ function DealRoomPage({ user }) {
     [mentionPool]
   );
   const memberIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
+
+  // FR-6: groups each folder's flat document list into version families —
+  // a "head" (the current, un-superseded version) plus its chain of older
+  // versions, walked backward via supersedes_id. A document with no version
+  // history is just a head with an empty chain.
+  const documentTreeByFolder = useMemo(() => {
+    const tree = {};
+    FOLDER_CATEGORIES.forEach((category) => {
+      const docsInFolder = documents.filter((d) => d.folder === category);
+      const byId = new Map(docsInFolder.map((d) => [d.id, d]));
+      const supersededIds = new Set(docsInFolder.map((d) => d.supersedes_id).filter((id) => id != null));
+      const heads = docsInFolder.filter((d) => !supersededIds.has(d.id));
+      tree[category] = heads.map((head) => {
+        const chain = [];
+        let current = head;
+        while (current.supersedes_id != null && byId.has(current.supersedes_id)) {
+          current = byId.get(current.supersedes_id);
+          chain.push(current);
+        }
+        return { head, chain };
+      });
+    });
+    return tree;
+  }, [documents]);
 
   // FR-3's folder classification is the natural Borrower/Lender split — no
   // separate party-type field needed, the source document already carries it.
@@ -533,7 +634,7 @@ function DealRoomPage({ user }) {
           </button>
           <button
             type="button"
-            className={`icon-rail-btn ${showChatPanel && rightPanelView === "ssi-borrower" ? "active" : ""}`}
+            className={`icon-rail-btn borrower-rail-btn ${showChatPanel && rightPanelView === "ssi-borrower" ? "active" : ""}`}
             onClick={() => toggleRightPanel("ssi-borrower")}
             title="SSI — Borrower"
           >
@@ -542,7 +643,7 @@ function DealRoomPage({ user }) {
           </button>
           <button
             type="button"
-            className={`icon-rail-btn ${showChatPanel && rightPanelView === "ssi-lender" ? "active" : ""}`}
+            className={`icon-rail-btn lender-rail-btn ${showChatPanel && rightPanelView === "ssi-lender" ? "active" : ""}`}
             onClick={() => toggleRightPanel("ssi-lender")}
             title="SSI — Lender"
           >
@@ -570,37 +671,56 @@ function DealRoomPage({ user }) {
         <aside className={`doc-explorer ${!showDocPanel ? "panel-collapsed" : ""}`}>
           <div className="doc-explorer-header">
             <h3>Documents</h3>
-            <button type="button" className="btn-ghost" onClick={open} title="Upload documents" disabled={uploading}>
-              <FaUpload />
-            </button>
+            <div className="doc-explorer-header-actions">
+              <button
+                type="button"
+                className="btn-ghost doc-compare-trigger"
+                onClick={compareSelection.length === 2 ? runCompare : undefined}
+                disabled={compareSelection.length !== 2 || comparing}
+                title={compareSelection.length === 2 ? (comparing ? "Comparing..." : "Compare selected files") : "Select 2 files to compare"}
+              >
+                <FaExchangeAlt />
+                {compareSelection.length > 0 && <span className="rail-badge">{compareSelection.length}</span>}
+              </button>
+              <button type="button" className="btn-ghost" onClick={open} title="Upload documents" disabled={uploading}>
+                <FaUpload />
+              </button>
+            </div>
           </div>
           {uploading && <p className="muted small">Uploading...</p>}
+          {compareSelection.length > 0 && (
+            <div className="compare-bar">
+              <span className="muted small">{compareSelection.length} of 2 selected</span>
+              <button type="button" className="btn-ghost" onClick={() => setCompareSelection([])} title="Clear selection">
+                <FaTimes /> Clear
+              </button>
+            </div>
+          )}
           {FOLDER_CATEGORIES.map((category) => {
-            const docsInFolder = documents.filter((d) => d.folder === category);
+            const docFamilies = documentTreeByFolder[category] || [];
             return (
               <AccordionItem
                 key={category}
                 title={
                   <span className="doc-folder-title">
                     <FaFolder />
-                    <span className="doc-folder-title-text">{category} ({docsInFolder.length})</span>
+                    <span className="doc-folder-title-text">{category} ({documents.filter((d) => d.folder === category).length})</span>
                   </span>
                 }
               >
-                {docsInFolder.length === 0 ? (
+                {docFamilies.length === 0 ? (
                   <p className="muted small">No documents yet</p>
                 ) : (
                   <div className="doc-file-list">
-                    {docsInFolder.map((doc) => (
-                      <button
-                        key={doc.id}
-                        type="button"
-                        className={`doc-file-link ${previewDoc?.id === doc.id ? "active" : ""}`}
-                        onClick={() => handlePreviewClick(doc)}
-                        title={doc.original_filename}
-                      >
-                        <FaFileAlt /> <span>{doc.original_filename}</span>
-                      </button>
+                    {docFamilies.map(({ head, chain }) => (
+                      <div key={head.id} className="doc-version-group">
+                        {renderDocRow(head)}
+                        {chain.length > 0 && (
+                          <div className="doc-version-children">
+                            {chain.map((doc) => renderDocRow(doc, true))}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 )}
@@ -610,7 +730,46 @@ function DealRoomPage({ user }) {
         </aside>
 
         <div className="doc-preview-panel">
-          {previewLoading ? (
+          {compareResult ? (
+            <>
+              <div className="doc-preview-header">
+                <span className="doc-preview-title" title={`${compareResult.document_a.original_filename} vs ${compareResult.document_b.original_filename}`}>
+                  <FaExchangeAlt /> {compareResult.document_a.original_filename} <span className="muted">vs</span> {compareResult.document_b.original_filename}
+                </span>
+                <div className="doc-preview-actions">
+                  <button type="button" className="btn-ghost" onClick={closeCompare} title="Close diff">
+                    <FaTimes />
+                  </button>
+                </div>
+              </div>
+              <div className="diff-view">
+                <div className="diff-col-headers">
+                  <span>{compareResult.document_a.original_filename}</span>
+                  <span>{compareResult.document_b.original_filename}</span>
+                </div>
+                {compareResult.rows.map((row, i) => (
+                  <div key={i} className={`diff-row diff-row-${row.type}`}>
+                    <div className="diff-col diff-col-left">
+                      {row.left_segments &&
+                        row.left_segments.map((seg, j) => (
+                          <span key={j} className={seg.changed ? "diff-seg-removed" : ""}>
+                            {seg.text}
+                          </span>
+                        ))}
+                    </div>
+                    <div className="diff-col diff-col-right">
+                      {row.right_segments &&
+                        row.right_segments.map((seg, j) => (
+                          <span key={j} className={seg.changed ? "diff-seg-added" : ""}>
+                            {seg.text}
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : previewLoading ? (
             <div className="doc-preview-empty">
               <p className="muted">Loading preview...</p>
             </div>
@@ -651,6 +810,12 @@ function DealRoomPage({ user }) {
         <div className={`chat-panel-v2 ${!showChatPanel ? "panel-collapsed" : ""}`}>
         {rightPanelView === "chat" && (
           <>
+          <div className="chat-panel-header">
+            <span className="ssi-panel-title">Chat</span>
+            <button type="button" className="btn-ghost" onClick={() => setShowChatPanel(false)} title="Close chat">
+              <FaTimes />
+            </button>
+          </div>
           <div className="chat-box" ref={chatBoxRef}>
             {messages.length === 0 && (
               <p className="muted" style={{ textAlign: "center", marginTop: "2rem" }}>
@@ -658,8 +823,6 @@ function DealRoomPage({ user }) {
               </p>
             )}
             {messages
-              .slice()
-              .reverse()
               .map((m) => {
                 const isBot = m.user.role === "agent";
                 return (
@@ -763,6 +926,14 @@ function DealRoomPage({ user }) {
                   {rightPanelView === "ssi-borrower" ? "Borrower" : "Lender"} Standing Instructions ({activeSsiList.length})
                 </span>
               )}
+              <button
+                type="button"
+                className="btn-ghost ssi-panel-close"
+                onClick={() => setShowChatPanel(false)}
+                title="Close panel"
+              >
+                <FaTimes />
+              </button>
             </div>
 
             <div className="ssi-panel-body">

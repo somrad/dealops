@@ -76,6 +76,10 @@ export function listDocuments(dealId) {
   return apiRequest(`/deals/${dealId}/documents`);
 }
 
+export function compareDocuments(dealId, docAId, docBId) {
+  return apiRequest(`/deals/${dealId}/documents/compare?doc_a=${docAId}&doc_b=${docBId}`);
+}
+
 export function listStandingInstructions(dealId) {
   return apiRequest(`/deals/${dealId}/standing-instructions`);
 }

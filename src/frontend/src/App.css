@@ -679,6 +679,7 @@ label {
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
   border-bottom: 1px solid var(--color-border);
+  background: #f3f4f6;
 }
 
 .ssi-panel-title {
@@ -686,10 +687,26 @@ label {
   font-size: 0.88rem;
 }
 
+.ssi-panel-close {
+  margin-left: auto;
+}
+
 .ssi-panel-body {
   flex: 1;
   overflow-y: auto;
   padding: 1rem 1.25rem;
+}
+
+.chat-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.chat-panel-header .btn-ghost {
+  margin-left: auto;
 }
 
 .ssi-detail {
@@ -953,6 +970,37 @@ label {
   color: #15803d;
 }
 
+/* Borrower/Lender get their own distinct tint too, same standing-color
+   pattern as chat — placed after .icon-rail-btn.active so they win the
+   cascade for the shared background/color properties. */
+.borrower-rail-btn {
+  color: #7c3aed;
+}
+
+.borrower-rail-btn:hover {
+  background: #f5f3ff;
+  color: #7c3aed;
+}
+
+.borrower-rail-btn.active {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.lender-rail-btn {
+  color: #0d9488;
+}
+
+.lender-rail-btn:hover {
+  background: #f0fdfa;
+  color: #0d9488;
+}
+
+.lender-rail-btn.active {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
 /* Grid tracks: doc explorer | preview | chat, driven by --doc-col/--chat-col
    CSS custom properties set inline per panel's open/closed state (0px or
    the panel's real width). Keeping both tracks always present — just 0-width
@@ -1019,6 +1067,16 @@ label {
   margin: 0;
 }
 
+.doc-explorer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.doc-compare-trigger {
+  position: relative;
+}
+
 .doc-file-list {
   display: flex;
   flex-direction: column;
@@ -1052,6 +1110,172 @@ label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* FR-6: version tree — a doc-file-row wraps the checkbox + the existing
+   file button; doc-version-group holds one family (head + its chain). */
+.doc-file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.doc-file-row .doc-file-link {
+  flex: 1;
+  min-width: 0;
+}
+
+.doc-compare-checkbox {
+  /* Overrides the global input{} rule (width:100%, padding, border) meant
+     for text inputs — without this it blows up to fill the whole row and
+     squeezes the filename button next to it down to zero width. */
+  width: 15px;
+  height: 15px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+}
+
+.doc-version-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* One continuous dotted trunk for the whole chain, via the left border;
+   each old version sprouts its own horizontal tick off that trunk via
+   ::before, forming the classic file-tree "└" connector per row. */
+.doc-version-children {
+  margin-left: 0.85rem;
+  padding-left: 0.85rem;
+  margin-top: 0.15rem;
+  border-left: 1px dotted var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.doc-version-child {
+  position: relative;
+}
+
+.doc-version-child::before {
+  content: "";
+  position: absolute;
+  left: -0.85rem;
+  top: 0.65rem;
+  width: 0.75rem;
+  border-top: 1px dotted var(--color-border);
+}
+
+/* Greyed out — an older, superseded version, de-emphasized next to the
+   current one. */
+.doc-version-child .doc-file-link {
+  color: var(--color-text-muted);
+}
+
+.doc-version-child .doc-file-link:hover {
+  color: var(--color-primary);
+}
+
+.compare-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-primary-light);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.compare-bar .btn-ghost {
+  margin-left: auto;
+  font-size: 0.78rem;
+  gap: 0.35rem;
+}
+
+/* FR-6: side-by-side diff view (like a Git PR split view / WinDiff) — two
+   aligned columns, a light row tint for any changed line, and a stronger
+   highlight on only the exact characters that differ within it. */
+.diff-view {
+  flex: 1;
+  overflow: auto;
+  background: white;
+}
+
+.diff-col-headers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  position: sticky;
+  top: 0;
+  background: #f3f4f6;
+  border-bottom: 1px solid var(--color-border);
+  padding: 0.6rem 0;
+  z-index: 1;
+}
+
+.diff-col-headers span {
+  padding: 0 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  text-align: center;
+  color: var(--color-text);
+}
+
+.diff-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.diff-col {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  /* overflow-wrap (not word-break: break-word, which forces a break
+     between ANY two characters once the column is narrow) only breaks a
+     word if it truly has nowhere else to go — this is what was chopping
+     "LENDER" into single letters when the panel got tight. Grid items also
+     default to min-width:auto, refusing to shrink below content's
+     intrinsic width — min-width:0 is what actually lets the column narrow
+     in the first place, same gotcha as the doc-explorer collapse earlier. */
+  overflow-wrap: break-word;
+  word-break: normal;
+  min-width: 0;
+  padding: 0.05rem 0.75rem;
+  min-height: 1.3em;
+}
+
+.diff-col-left {
+  border-right: 1px solid var(--color-border);
+}
+
+.diff-row-remove .diff-col-left,
+.diff-row-replace .diff-col-left {
+  background: #fef2f2;
+}
+
+.diff-row-add .diff-col-right,
+.diff-row-replace .diff-col-right {
+  background: #f0fdf4;
+}
+
+/* The exact changed substring within a changed line — stronger than the
+   whole-line tint above, so the eye lands on precisely what changed. */
+.diff-seg-removed {
+  background: #fecaca;
+  color: #991b1b;
+  border-radius: 2px;
+}
+
+.diff-seg-added {
+  background: #bbf7d0;
+  color: #166534;
+  border-radius: 2px;
 }
 
 /* Drag-and-drop overlay, covers the whole deal room body while dragging */

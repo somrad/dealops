@@ -73,9 +73,27 @@ class DocumentOut(BaseModel):
     size_bytes: Optional[int] = None
     uploaded_at: datetime
     uploaded_by: UserOut
+    supersedes_id: Optional[int] = None
 
     class Config:
         from_attributes = True
+
+
+class DiffSegmentOut(BaseModel):
+    text: str
+    changed: bool = False
+
+
+class DiffRowOut(BaseModel):
+    type: str  # equal / add / remove / replace
+    left_segments: Optional[List[DiffSegmentOut]] = None
+    right_segments: Optional[List[DiffSegmentOut]] = None
+
+
+class DocumentCompareOut(BaseModel):
+    document_a: DocumentOut
+    document_b: DocumentOut
+    rows: List[DiffRowOut]
 
 
 class SsiActivityItemOut(BaseModel):
