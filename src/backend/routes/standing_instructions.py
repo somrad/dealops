@@ -35,12 +35,15 @@ def build_ssi_out(ssi: StandingInstruction, document: Document, db: Session) -> 
     return {
         "id": ssi.id,
         "document_id": ssi.document_id,
-        "document_filename": document.original_filename,
+        # document can be None if its row is gone (e.g. removed outside the
+        # app — deletion in-app is always a soft move to "Deleted", never a
+        # hard remove) — degrade gracefully instead of 500ing the whole list.
+        "document_filename": document.original_filename if document else None,
         # Which folder the source document landed in (FR-3) is what "Borrower
         # vs. Lender" actually means here — there's no separate party-type
         # field, this is the natural signal already on the document.
-        "document_folder": document.folder,
-        "added_by": document.uploaded_by,
+        "document_folder": document.folder if document else None,
+        "added_by": document.uploaded_by if document else None,
         "account_holder_name": ssi.account_holder_name,
         "bank_name": ssi.bank_name,
         "masked_account_number": mask_account_number(ssi.account_number),
@@ -81,6 +84,8 @@ def get_highlighted_document(
         raise HTTPException(status_code=404, detail="Standing instruction not found")
 
     document = ssi.document
+    if document is None:
+        raise HTTPException(status_code=404, detail="Source document no longer available")
     stored_path = os.path.join(deal_storage_path(deal_id), document.stored_filename)
     if not os.path.exists(stored_path):
         raise HTTPException(status_code=404, detail="File missing from storage")

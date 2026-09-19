@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
-import { FaPaperPlane, FaBuilding, FaIndustry, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaDownload, FaComments, FaFlag, FaRobot, FaUserTie, FaUniversity, FaEye, FaArrowLeft, FaCheckCircle, FaHighlighter, FaExchangeAlt } from "react-icons/fa";
+import { FaPaperPlane, FaBuilding, FaIndustry, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaDownload, FaComments, FaFlag, FaRobot, FaUserTie, FaUniversity, FaEye, FaArrowLeft, FaCheckCircle, FaHighlighter, FaExchangeAlt, FaEllipsisV, FaTrashAlt, FaShare, FaSitemap, FaHandHoldingUsd, FaFileInvoiceDollar, FaClipboardCheck } from "react-icons/fa";
+import { GiPoliceOfficerHead } from "react-icons/gi";
 import {
   getDeal,
   listMessages,
@@ -14,10 +15,14 @@ import {
   fetchDocumentBlob,
   fetchHighlightedDocumentBlob,
   compareDocuments,
+  moveDocument,
   listAgentCommands,
   listStandingInstructions,
   validateStandingInstruction,
   listDealActivity,
+  getFundingDocument,
+  generateFundingDocument,
+  uploadFundingDocument,
 } from "../api";
 import Avatar from "../components/Avatar";
 import AccordionItem from "../components/AccordionItem";
@@ -33,6 +38,7 @@ const SSI_STATUS_LABELS = {
   pending_checker_review: "Pending review",
   checker_validated: "Validated",
   rejected: "Rejected",
+  superseded: "Superseded",
 };
 
 // Each product type gets its own icon + color, not one shared blue — a
@@ -53,7 +59,10 @@ const ROLE_LABELS = {
 
 // Folder categories from the FR-3 spec, plus Unfiled for anything the
 // classifier couldn't confidently place.
-const FOLDER_CATEGORIES = ["Borrower", "Lenders", "Credit Verification", "Funding Docs", "Unfiled"];
+// A document only ever reaches "Deleted" via an explicit move, never
+// classification — kept out of this list so it never shows as a normal
+// working folder, and rendered as its own separate, muted section instead.
+const FOLDER_CATEGORIES = ["Borrower", "Lenders", "Credit Verification", "Funding Docs", "3rd Party Providers", "Unfiled"];
 
 function formatTime(isoString) {
   return new Date(isoString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -154,8 +163,16 @@ function DealRoomPage({ user }) {
   const [compareResult, setCompareResult] = useState(null);
   const [comparing, setComparing] = useState(false);
   const [panelsBeforeCompare, setPanelsBeforeCompare] = useState(null);
+  const [moveMenuDocId, setMoveMenuDocId] = useState(null);
+  const [moving, setMoving] = useState(false);
+  const [fundingDoc, setFundingDoc] = useState(null);
+  const [showGenerateForm, setShowGenerateForm] = useState(false);
+  const [generateForm, setGenerateForm] = useState({ loan_amount: "", interest_rate: "", upfront_fee: "", legal_fee: "", currency: "USD" });
+  const [generatingFunding, setGeneratingFunding] = useState(false);
+  const [uploadingFunding, setUploadingFunding] = useState(false);
   const chatBoxRef = useRef(null);
   const inputRef = useRef(null);
+  const fundingFileInputRef = useRef(null);
 
   useEffect(() => {
     getDeal(dealId).then(setDeal);
@@ -180,7 +197,17 @@ function DealRoomPage({ user }) {
     listDocuments(dealId).then(setDocuments);
     listStandingInstructions(dealId).then(setStandingInstructions);
     listDealActivity(dealId).then(setActivity);
+    getFundingDocument(dealId).then(setFundingDoc);
   }
+
+  useEffect(() => {
+    if (moveMenuDocId === null) return;
+    function closeMenu() {
+      setMoveMenuDocId(null);
+    }
+    document.addEventListener("click", closeMenu);
+    return () => document.removeEventListener("click", closeMenu);
+  }, [moveMenuDocId]);
 
   async function handleValidateSubmit(event) {
     event.preventDefault();
@@ -318,6 +345,111 @@ function DealRoomPage({ user }) {
     }
   }
 
+  // A wrongly-classified document can be corrected by hand; moving it to a
+  // real folder re-triggers extraction if it hasn't already produced an SSI
+  // (backend-side, so no duplicate SSIs on a repeated/no-op move). Deleting
+  // is the same call with folder="Deleted" — no separate mechanism.
+  async function handleMove(doc, folder) {
+    setMoveMenuDocId(null);
+    if (folder === doc.folder) return;
+    setMoving(true);
+    try {
+      await moveDocument(dealId, doc.id, folder);
+      if (previewDoc?.id === doc.id) closePreview();
+      refresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setMoving(false);
+    }
+  }
+
+  // FR-13: Deal-Team-only. Backend also enforces this — the button is
+  // hidden for other roles below, but the real gate is server-side.
+  async function handleGenerateFunding(event) {
+    event.preventDefault();
+    setGeneratingFunding(true);
+    try {
+      const payload = {
+        loan_amount: parseFloat(generateForm.loan_amount) || 0,
+        interest_rate: parseFloat(generateForm.interest_rate) || 0,
+        upfront_fee: parseFloat(generateForm.upfront_fee) || 0,
+        legal_fee: parseFloat(generateForm.legal_fee) || 0,
+        currency: generateForm.currency || "USD",
+      };
+      const result = await generateFundingDocument(dealId, payload);
+      setFundingDoc(result);
+      setShowGenerateForm(false);
+      refresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setGeneratingFunding(false);
+    }
+  }
+
+  async function handleUploadFunding(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadingFunding(true);
+    try {
+      const result = await uploadFundingDocument(dealId, file);
+      setFundingDoc(result);
+      refresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setUploadingFunding(false);
+    }
+  }
+
+  // FR-14's actual gating rule, made visible: "Ready" needs both — the
+  // party is confirmed present in the fund flow document AND its own
+  // Standing Instruction is Checker-validated. "no_ssi_on_file" is its own
+  // distinct label (not "awaiting validation") since nothing is actually
+  // pending there — this deal just never extracted one for that party
+  // (e.g. a co-lender whose SSI was set up on a previous deal and reused).
+  function remitReadiness(entry) {
+    const ready = entry.confirmed && entry.status === "checker_validated";
+    let label;
+    if (ready) label = "Ready";
+    else if (entry.status === "no_ssi_on_file") label = "No SSI on file in this deal";
+    else if (!entry.confirmed) label = "Not in document";
+    else label = "Awaiting validation";
+    return { ready, label };
+  }
+
+  function renderReconciliationGroups(reconciliation, filterFn) {
+    return [
+      ["borrower", "Borrower"],
+      ["lenders", "Lenders"],
+      ["third_party", "3rd Party Providers"],
+    ].map(([key, label]) => {
+      const entries = filterFn ? reconciliation[key].filter(filterFn) : reconciliation[key];
+      return (
+        <div key={key} className="remit-group">
+          <h3>{label}</h3>
+          {entries.length === 0 ? (
+            <p className="muted small">{filterFn ? "Nothing here needs your review." : "No participants on file."}</p>
+          ) : (
+            entries.map((e, i) => {
+              const { ready, label: statusLabel } = remitReadiness(e);
+              return (
+                <div key={i} className="remit-row">
+                  <span className="remit-row-name">{e.name}</span>
+                  <span className={`remit-badge ${ready ? "remit-ready" : "remit-blocked"}`}>
+                    {ready ? <FaCheckCircle /> : <FaTimes />} {statusLabel}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      );
+    });
+  }
+
   // Shared by both a version family's head row and its greyed-out older
   // versions — same file button + a checkbox for FR-6 compare-selection,
   // just an extra "indented, under the tree line" class for old versions.
@@ -339,6 +471,34 @@ function DealRoomPage({ user }) {
         >
           <FaFileAlt /> <span>{doc.original_filename}</span>
         </button>
+        <div className="doc-move-wrap">
+          <button
+            type="button"
+            className="btn-ghost doc-move-trigger"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMoveMenuDocId(moveMenuDocId === doc.id ? null : doc.id);
+            }}
+            title="Move or delete"
+            disabled={moving}
+          >
+            <FaEllipsisV />
+          </button>
+          {moveMenuDocId === doc.id && (
+            <div className="doc-move-menu">
+              <div className="doc-move-menu-label">Move to</div>
+              {FOLDER_CATEGORIES.filter((f) => f !== doc.folder).map((f) => (
+                <div key={f} className="doc-move-item" onMouseDown={() => handleMove(doc, f)}>
+                  <FaShare /> {f}
+                </div>
+              ))}
+              <div className="doc-move-menu-divider" />
+              <div className="doc-move-item doc-move-delete" onMouseDown={() => handleMove(doc, "Deleted")}>
+                <FaTrashAlt /> Delete
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -408,6 +568,36 @@ function DealRoomPage({ user }) {
     });
     return tree;
   }, [documents]);
+
+  const deletedDocs = useMemo(() => documents.filter((d) => d.folder === "Deleted"), [documents]);
+
+  // Deal Map — a quick census of the deal, assembled from data already in
+  // state (no new endpoint needed; the shape mirrors what build_deal_context()
+  // hands the agent for "describe"/"docs"/"ssi").
+  const memberCountsByRole = useMemo(() => {
+    const counts = {};
+    members.forEach((m) => {
+      if (m.role === "agent") return;
+      counts[m.role] = (counts[m.role] || 0) + 1;
+    });
+    return counts;
+  }, [members]);
+
+  const docCountsByFolder = useMemo(() => {
+    const counts = {};
+    documents.forEach((d) => {
+      counts[d.folder] = (counts[d.folder] || 0) + 1;
+    });
+    return counts;
+  }, [documents]);
+
+  const ssiCountsByStatus = useMemo(() => {
+    const counts = {};
+    standingInstructions.forEach((s) => {
+      counts[s.status] = (counts[s.status] || 0) + 1;
+    });
+    return counts;
+  }, [standingInstructions]);
 
   // FR-3's folder classification is the natural Borrower/Lender split — no
   // separate party-type field needed, the source document already carries it.
@@ -650,6 +840,44 @@ function DealRoomPage({ user }) {
             <FaUniversity />
             {lenderPendingCount > 0 && <span className="rail-badge">{lenderPendingCount}</span>}
           </button>
+          <button
+            type="button"
+            className={`icon-rail-btn map-rail-btn ${showChatPanel && rightPanelView === "deal-map" ? "active" : ""}`}
+            onClick={() => toggleRightPanel("deal-map")}
+            title="Deal Map"
+          >
+            <FaSitemap />
+          </button>
+          {user.role === "deal_team" && (
+            <button
+              type="button"
+              className={`icon-rail-btn remit-rail-btn ${showChatPanel && rightPanelView === "generate-funding" ? "active" : ""}`}
+              onClick={() => toggleRightPanel("generate-funding")}
+              title="Generate Fund Flow Document"
+            >
+              <FaFileInvoiceDollar />
+            </button>
+          )}
+          {(user.role === "ops_team_member" || user.role === "ops_manager") && (
+            <button
+              type="button"
+              className={`icon-rail-btn remit-rail-btn ${showChatPanel && rightPanelView === "remittances" ? "active" : ""}`}
+              onClick={() => toggleRightPanel("remittances")}
+              title="Remittances"
+            >
+              <FaHandHoldingUsd />
+            </button>
+          )}
+          {user.role === "checker" && (
+            <button
+              type="button"
+              className={`icon-rail-btn remit-rail-btn ${showChatPanel && rightPanelView === "remittance-checker" ? "active" : ""}`}
+              onClick={() => toggleRightPanel("remittance-checker")}
+              title="Remittances — Checker Approval"
+            >
+              <FaClipboardCheck />
+            </button>
+          )}
         </div>
 
       <div
@@ -727,6 +955,22 @@ function DealRoomPage({ user }) {
               </AccordionItem>
             );
           })}
+          <AccordionItem
+            title={
+              <span className="doc-folder-title doc-folder-title-deleted">
+                <FaTrashAlt />
+                <span className="doc-folder-title-text">Deleted ({deletedDocs.length})</span>
+              </span>
+            }
+          >
+            {deletedDocs.length === 0 ? (
+              <p className="muted small">Nothing deleted</p>
+            ) : (
+              <div className="doc-file-list">
+                {deletedDocs.map((doc) => renderDocRow(doc))}
+              </div>
+            )}
+          </AccordionItem>
         </aside>
 
         <div className="doc-preview-panel">
@@ -963,18 +1207,22 @@ function DealRoomPage({ user }) {
                   </div>
                   <div className="sidebar-row">
                     <span>Evidence</span>
-                    <button
-                      type="button"
-                      className="evidence-link"
-                      onClick={() => handleViewEvidence(detailSsi)}
-                      title="Open the source document with the detected bank details highlighted"
-                    >
-                      <FaHighlighter /> {detailSsi.document_filename}
-                    </button>
+                    {detailSsi.document_filename ? (
+                      <button
+                        type="button"
+                        className="evidence-link"
+                        onClick={() => handleViewEvidence(detailSsi)}
+                        title="Open the source document with the detected bank details highlighted"
+                      >
+                        <FaHighlighter /> {detailSsi.document_filename}
+                      </button>
+                    ) : (
+                      <strong className="muted">Source document no longer available</strong>
+                    )}
                   </div>
                   <div className="sidebar-row">
                     <span>Added by</span>
-                    <strong>{detailSsi.added_by.name}</strong>
+                    <strong>{detailSsi.added_by?.name || "—"}</strong>
                   </div>
                   <div className="sidebar-row">
                     <span>Submitted</span>
@@ -1054,6 +1302,194 @@ function DealRoomPage({ user }) {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {rightPanelView === "deal-map" && (
+          <div className="ssi-panel">
+            <div className="ssi-panel-header">
+              <span className="ssi-panel-title"><FaSitemap /> Deal Map</span>
+              <button type="button" className="btn-ghost ssi-panel-close" onClick={() => setShowChatPanel(false)} title="Close panel">
+                <FaTimes />
+              </button>
+            </div>
+            <div className="ssi-panel-body">
+              <h3>Deal</h3>
+              <div className="sidebar-row">
+                <span>Reference</span>
+                <strong>{deal.reference}</strong>
+              </div>
+              <div className="sidebar-row">
+                <span>Product</span>
+                <strong>{meta.label}</strong>
+              </div>
+              <div className="sidebar-row">
+                <span>Status</span>
+                <strong className="capitalize">{deal.status}</strong>
+              </div>
+
+              <h3 style={{ marginTop: "1.25rem" }}>Members ({members.length})</h3>
+              {Object.entries(memberCountsByRole).map(([role, count]) => (
+                <div className="sidebar-row" key={role}>
+                  <span>{ROLE_LABELS[role] || role}</span>
+                  <strong>{count}</strong>
+                </div>
+              ))}
+
+              <h3 style={{ marginTop: "1.25rem" }}>Documents ({documents.length})</h3>
+              {[...FOLDER_CATEGORIES, "Deleted"].map((folder) => (
+                <div className="sidebar-row" key={folder}>
+                  <span>{folder}</span>
+                  <strong>{docCountsByFolder[folder] || 0}</strong>
+                </div>
+              ))}
+
+              <h3 style={{ marginTop: "1.25rem" }}>Standing Instructions ({standingInstructions.length})</h3>
+              {Object.keys(SSI_STATUS_LABELS).map((status) => (
+                <div className="sidebar-row" key={status}>
+                  <span>{SSI_STATUS_LABELS[status]}</span>
+                  <strong>{ssiCountsByStatus[status] || 0}</strong>
+                </div>
+              ))}
+
+              <h3 style={{ marginTop: "1.25rem" }}>Fund Flow Document</h3>
+              <div className="sidebar-row">
+                <span>Status</span>
+                <strong>{fundingDoc?.document ? fundingDoc.document.original_filename : "Not created yet"}</strong>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {rightPanelView === "generate-funding" && (
+          <div className="ssi-panel">
+            <div className="ssi-panel-header">
+              <span className="ssi-panel-title"><FaFileInvoiceDollar /> Generate Fund Flow Document</span>
+              <button type="button" className="btn-ghost ssi-panel-close" onClick={() => setShowChatPanel(false)} title="Close panel">
+                <FaTimes />
+              </button>
+            </div>
+            <div className="ssi-panel-body">
+              {!fundingDoc ? (
+                <p className="muted small">Loading...</p>
+              ) : !fundingDoc.document ? (
+                <div className="funding-empty">
+                  <p className="muted small">
+                    No Fund Flow / Settlement and Closing Document yet. Remittances stay
+                    blocked for every party until one exists.
+                  </p>
+                  <button type="button" onClick={() => setShowGenerateForm(true)}>
+                    <FaFileAlt /> Generate from documents on file
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={() => fundingFileInputRef.current?.click()}
+                    disabled={uploadingFunding}
+                  >
+                    <FaUpload /> {uploadingFunding ? "Uploading..." : "Upload settlement/closing PDF"}
+                  </button>
+                  <input
+                    ref={fundingFileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    style={{ display: "none" }}
+                    onChange={handleUploadFunding}
+                  />
+                </div>
+              ) : (
+                <>
+                  <div className="sidebar-row">
+                    <span>Fund Flow Document</span>
+                    <button type="button" className="evidence-link" onClick={() => handlePreviewClick(fundingDoc.document)}>
+                      <FaFileAlt /> {fundingDoc.document.original_filename}
+                    </button>
+                  </div>
+
+                  {renderReconciliationGroups(fundingDoc.reconciliation)}
+
+                  <button type="button" className="btn-secondary" style={{ marginTop: "1rem" }} onClick={() => setShowGenerateForm(true)}>
+                    <FaExchangeAlt /> Regenerate
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ marginTop: "0.5rem" }}
+                    onClick={() => fundingFileInputRef.current?.click()}
+                    disabled={uploadingFunding}
+                  >
+                    <FaUpload /> {uploadingFunding ? "Uploading..." : "Replace with upload"}
+                  </button>
+                  <input
+                    ref={fundingFileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    style={{ display: "none" }}
+                    onChange={handleUploadFunding}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {rightPanelView === "remittances" && (
+          <div className="ssi-panel">
+            <div className="ssi-panel-header">
+              <span className="ssi-panel-title"><FaHandHoldingUsd /> Remittances</span>
+              <button type="button" className="btn-ghost ssi-panel-close" onClick={() => setShowChatPanel(false)} title="Close panel">
+                <FaTimes />
+              </button>
+            </div>
+            <div className="ssi-panel-body">
+              {!fundingDoc ? (
+                <p className="muted small">Loading...</p>
+              ) : !fundingDoc.document ? (
+                <p className="muted small">
+                  No Fund Flow / Settlement and Closing Document yet — ask a Deal Team member
+                  to generate or upload one before any remittance can move.
+                </p>
+              ) : (
+                <>
+                  <div className="sidebar-row">
+                    <span>Fund Flow Document</span>
+                    <button type="button" className="evidence-link" onClick={() => handlePreviewClick(fundingDoc.document)}>
+                      <FaFileAlt /> {fundingDoc.document.original_filename}
+                    </button>
+                  </div>
+                  {renderReconciliationGroups(fundingDoc.reconciliation)}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {rightPanelView === "remittance-checker" && (
+          <div className="ssi-panel">
+            <div className="ssi-panel-header">
+              <span className="ssi-panel-title"><FaClipboardCheck /> Remittances — Checker Approval</span>
+              <button type="button" className="btn-ghost ssi-panel-close" onClick={() => setShowChatPanel(false)} title="Close panel">
+                <FaTimes />
+              </button>
+            </div>
+            <div className="ssi-panel-body">
+              {!fundingDoc ? (
+                <p className="muted small">Loading...</p>
+              ) : !fundingDoc.document ? (
+                <p className="muted small">No Fund Flow / Settlement and Closing Document yet.</p>
+              ) : (
+                <>
+                  <p className="muted small">
+                    Parties still blocking remittance — validate via the Borrower/Lender SSI
+                    panels (left rail). Blind re-entry happens there, not here.
+                  </p>
+                  {renderReconciliationGroups(
+                    fundingDoc.reconciliation,
+                    (e) => !(e.confirmed && e.status === "checker_validated")
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1140,6 +1576,49 @@ function DealRoomPage({ user }) {
         </div>
       )}
 
+      {showGenerateForm && (
+        <Modal title="Generate Fund Flow Document" onClose={() => setShowGenerateForm(false)}>
+          <form className="modal-form" onSubmit={handleGenerateFunding}>
+            <p className="muted small">
+              Borrower, Lender, and 3rd Party Provider names are pulled automatically from
+              standing instructions already on file — just the loan economics below.
+            </p>
+            <label>Loan amount</label>
+            <input
+              type="number" step="0.01" required autoFocus
+              value={generateForm.loan_amount}
+              onChange={(e) => setGenerateForm({ ...generateForm, loan_amount: e.target.value })}
+            />
+            <label>Interest rate (% per annum)</label>
+            <input
+              type="number" step="0.001" required
+              value={generateForm.interest_rate}
+              onChange={(e) => setGenerateForm({ ...generateForm, interest_rate: e.target.value })}
+            />
+            <label>Upfront / origination fee</label>
+            <input
+              type="number" step="0.01"
+              value={generateForm.upfront_fee}
+              onChange={(e) => setGenerateForm({ ...generateForm, upfront_fee: e.target.value })}
+            />
+            <label>Legal fee</label>
+            <input
+              type="number" step="0.01"
+              value={generateForm.legal_fee}
+              onChange={(e) => setGenerateForm({ ...generateForm, legal_fee: e.target.value })}
+            />
+            <label>Currency</label>
+            <input
+              value={generateForm.currency}
+              onChange={(e) => setGenerateForm({ ...generateForm, currency: e.target.value })}
+            />
+            <button type="submit" disabled={generatingFunding}>
+              {generatingFunding ? "Generating..." : "Generate"}
+            </button>
+          </form>
+        </Modal>
+      )}
+
       {validatingSsi && (
         <Modal
           title={`Validate — ${validatingSsi.account_holder_name || "Unnamed party"}`}
@@ -1149,6 +1628,10 @@ function DealRoomPage({ user }) {
           }}
         >
           <form className="modal-form" onSubmit={handleValidateSubmit}>
+            <div className="shisa-kanko-icon">
+              <GiPoliceOfficerHead />
+            </div>
+            <p className="shisa-kanko-label">Shisa Kanko — Point and Call</p>
             <p className="muted small">
               Open the source document (left panel) and re-type the account number exactly as it
               appears there. This is a blind check — the extracted number is never shown to you.

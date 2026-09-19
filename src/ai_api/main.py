@@ -22,8 +22,7 @@ app.add_middleware(
 async def classify_document_endpoint(file: UploadFile = File(...)):
     content = await file.read()
     text_content = extract_text(content, file.content_type, file.filename)
-    folder = classify_document(file.filename, text_content)
-    return {"folder": folder}
+    return classify_document(file.filename, text_content)
 
 
 @app.post("/extract-payment-details")
@@ -57,6 +56,10 @@ class StandingInstructionContext(BaseModel):
     loan_iq_reference: Optional[str] = None
 
 
+class FundFlowDocumentContext(BaseModel):
+    filename: str
+
+
 class DealContext(BaseModel):
     title: str
     reference: str
@@ -66,6 +69,7 @@ class DealContext(BaseModel):
     message_count: int
     documents: List[DocumentContext] = []
     standing_instructions: List[StandingInstructionContext] = []
+    fund_flow_document: Optional[FundFlowDocumentContext] = None
 
 
 class AgentRespondRequest(BaseModel):

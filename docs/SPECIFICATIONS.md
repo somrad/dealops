@@ -26,6 +26,8 @@ A user may hold roles across multiple deals simultaneously (e.g. Ops Manager on 
 - **Document** — an uploaded file, belongs to exactly one Deal, classified into a folder category, may have multiple versions.
 - **Folder Category** — classification bucket for documents within a deal (e.g. Borrower, Lenders, Credit Verification, Funding Docs — extensible, not a fixed enum).
 - **Standing Instruction** — a payment/settlement instruction record derived from extracted borrower/lender account details, submitted to the mock Loan IQ API.
+- **Fund Flow Document (a.k.a. Settlement and Closing Document)** — the authoritative document stating how much each party is owed at closing (see FR-13); distinct from the account-detail documents behind each Standing Instruction.
+- **Remittance** — a per-party disbursement, gated on that party's Standing Instruction being Checker-validated (see FR-14).
 - **Audit Log Entry** — an immutable record of a Deal Room conversation message or a significant deal action.
 
 ## 4. Functional Requirements
@@ -136,6 +138,28 @@ The default assumption that "funds go to the borrower" is not always correct —
 - This discrepancy check applies to the **Recipient/payee checkpoint** (added to the FR-10 checklist above) and functions as a specialized case of FR-11's auto-detection — except that instead of confirming a match, it's specifically watching for a *conflict* between assumed and actual data.
 - Who is authorized to perform the manual override (a Checker, an Ops Manager, or either) is an open question — see Section 6.
 
+### FR-13 — Fund Flow Document / Settlement and Closing Document (IMPLEMENTED)
+
+Only a **Deal Team Member** can create the deal's **Fund Flow Document** — also called the **Settlement and Closing Document** — the authoritative statement of the deal's final disbursement: which party (Borrower, each Lender, any third-party recipient such as a title/escrow agent per FR-12) is owed how much at closing, plus loan details and upfront fees (origination, legal). Two ways to create it, both restricted to Deal Team:
+1. **Generate** — via `/generate-funding-document` in chat (which reports status and points here — the actual generation is a write action, so it happens through the dedicated UI, not chat text, for the same reason FR-10's blind re-entry isn't a chat command) or the **Remittances** icon in the Deal Room's left rail. The Deal Team member enters loan amount, interest rate, and upfront/legal fees; Borrower, Lender, and 3rd Party Provider names are pulled automatically from standing instructions already on file. The system assembles a PDF and files it under Funding Docs.
+2. **Upload** — drag/attach an existing settlement-and-closing PDF through the same Remittances panel; it goes through the normal FR-3 classification + FR-5 extraction pipeline like any upload, then is designated as the deal's Fund Flow Document.
+
+Either way, the resulting document becomes the one `fund_flow_document_id` the deal points to (replacing whichever was designated before, if any) — visible from the **Deal Map** (FR-13a below).
+
+**Reconciliation (points 9–11 of the original ask):** whenever a Fund Flow Document exists, the system compares its text against every Standing Instruction on file for the Borrower, Lenders, and 3rd Party Providers folders — does that party's name actually appear in the document driving remittance? A generated document always matches by construction (its text *is* the SSI names); an uploaded one can genuinely miss or misstate a party, which is exactly the case worth catching before FR-14 lets money move. Shown per-party in the Remittances panel as confirmed / not-found, independent of and prior to the FR-14 Checker-validation gate.
+
+### FR-13a — Deal Map (IMPLEMENTED)
+
+A **Deal Map** icon in the Deal Room's left rail opens a quick census of the deal: reference/product/status, member counts by role, document counts by folder (including Deleted), Standing Instruction counts by status, and the current Fund Flow Document's filename (or "not created yet"). Assembled entirely from data already available to the Deal Room — no new reasoning, just a single-glance summary standing in for what the founder calls "the deal map."
+
+### FR-14 — Remittance (PARTIALLY IMPLEMENTED — reconciliation built, execution not yet)
+
+A **Remittances** view in the Deal Room (its own icon in the left rail) shows, for every party with a Standing Instruction in the Borrower/Lenders/3rd Party Providers folders, whether remittance to that party is currently allowed.
+
+- **Gating rule (hard requirement, encoded in the UI today):** a party reads "Ready" only when its Standing Instruction (FR-5) is Checker-validated (FR-10) **and** it's confirmed present in the Fund Flow Document (FR-13's reconciliation). Anything else — pending, rejected, or simply not mentioned in the document — reads "Awaiting validation" or "Not in document," not "Ready." This is per-party, not deal-wide: one lender being cleared doesn't move another.
+- **Not yet built:** actually executing/recording a remittance (an action + its own audit log entry) — today the panel shows readiness only. This supersedes/refines FR-8's original single "big beautiful button" framing; FR-8 should be explicitly reconciled with this (or retired in its favor) once remittance execution itself is scoped.
+- Every remittance action (becoming enabled, and being executed) must be logged per FR-7, same as any other significant deal action.
+
 ## 5. Non-Functional Notes
 
 - **Deployment model (RESOLVED):** installed, single-tenant per bank — not multi-tenant SaaS. Each bank runs its own instance; there is no shared cloud infrastructure across banks, so cross-bank data isolation is a deployment-level property, not something the application needs to enforce via tenant scoping.
@@ -160,3 +184,10 @@ The default assumption that "funds go to the borrower" is not always correct —
 - **New (FR-12):** What loan products besides real estate need this kind of recipient-discrepancy check? Is this specific to real estate, or a general pattern (assumed recipient vs. actual document-stated recipient) that should be checked on every deal regardless of product type?
 - **New (deployment model):** Who defines per-product-type configuration (checkpoint lists, folder categories) at a given bank's instance — is this fixed/shipped by dealops per product type, or can the bank's own admins customize it (e.g. add a new loan product type, or tweak a checkpoint list) without needing a new release?
 - **New (deployment model):** Does "installed" mean fully on-prem (bank's own data center), the bank's private cloud/VPC, or either — and does this affect how updates/patches are delivered to an installed instance over time?
+- ~~Is the Fund Flow Document its own folder category or filed under "Funding Docs"?~~ **RESOLVED: filed under "Funding Docs"** — the AI classifier (FR-3) already routes it there correctly; a dedicated category wasn't needed once `Deal.fund_flow_document_id` exists to mark *which* Funding Docs entry is the fund flow document.
+- ~~Does the system extract per-party owed amounts automatically?~~ **RESOLVED: no dollar-amount-per-party extraction** — loan amount and fees are entered once at generation time; per-party amounts aren't modeled yet (open item below).
+- **New (FR-14):** Who is authorized to execute an enabled remittance — an Ops Team Member (per FR-8's original "ops team disburses" framing), or does this need its own explicit authorization step? (Execution itself isn't built yet — see FR-14.)
+- ~~How are third-party recipients represented for remittance purposes?~~ **RESOLVED: they get a real Standing Instruction**, same as Borrower/Lenders — extraction already runs on 3rd Party Provider uploads (e.g. a law firm's fee statement with its own trust account details) exactly like any other folder.
+- **New (FR-14):** Should FR-8 be retired in favor of FR-14's per-party gating, or kept as a separate deal-level "everything's ready" milestone that sits alongside per-party remittance?
+- **New (FR-14):** If a party's Standing Instruction is later rejected *after* its remittance has already been executed (e.g. a mismatch discovered in a re-check), what happens — is that even possible given FR-10's flow, and if so, what's the response?
+- **New (FR-13):** Per-party owed *amounts* aren't modeled yet — the generated document currently lists loan-level totals and fees, not a dollar figure per Borrower/Lender/3rd-party line. Needed before remittance execution can know how much to move per party.

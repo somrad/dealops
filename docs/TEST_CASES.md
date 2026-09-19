@@ -132,6 +132,37 @@ Legend: **Role** = who performs the action. **Expected** = observable outcome.
 | TC-12.6 | No silent auto-resolution | System (AI) | A discrepancy is detected | System never auto-corrects or auto-dismisses the discrepancy on its own — it always waits for a human decision |
 | TC-12.7 | Funding gate blocked pending override | Deal Team Member | Attempt the FR-8 funding trigger while a recipient discrepancy is still unresolved | Blocked — an unresolved discrepancy prevents funding, same as any other unconfirmed required checkpoint |
 
+## FR-13 — Fund Flow Document / Settlement and Closing Document
+
+| ID | Scenario | Role | Steps | Expected |
+|---|---|---|---|---|
+| TC-13.1 | Happy path — generate | Deal Team Member | Enter loan amount/rate/fees and generate the Fund Flow Document | PDF is created, filed under Funding Docs, and set as `deal.fund_flow_document_id`; reconciliation shows every existing Borrower/Lender/3rd-party SSI as confirmed (verified live: 4 borrower + 6 lender entries, all `confirmed: true`) |
+| TC-13.2 | Happy path — upload | Deal Team Member | Upload an existing settlement/closing PDF through the Remittances panel | Goes through normal FR-3 classification + FR-5 extraction, then is set as the deal's Fund Flow Document (verified live: a legal-fee statement correctly classified to 3rd Party Providers, extracted its trust account as a new SSI, and reconciliation showed `confirmed: true` for that party and `false` for every unrelated Borrower/Lender SSI) |
+| TC-13.3 | Non-Deal-Team blocked | Ops Team Member, Checker, Ops Manager | Attempt to generate or upload the Fund Flow Document | 403 — verified live (Checker got 403 on generate; only `deal_team` role may call either endpoint) |
+| TC-13.4 | Replacing the Fund Flow Document | Deal Team Member | Generate or upload again after one already exists | The new document replaces the old one as `fund_flow_document_id` (verified live); the prior document itself is untouched, just no longer designated |
+| TC-13.5 | Reconciliation catches a real mismatch | Deal Team Member | Upload a Fund Flow Document that doesn't mention one of the existing SSI parties | That party's reconciliation entry reads `confirmed: false`, distinct from parties actually named in the document |
+
+## FR-13a — Deal Map
+
+| ID | Scenario | Role | Steps | Expected |
+|---|---|---|---|---|
+| TC-13a.1 | Census matches live data | Any Deal Room member | Open the Deal Map panel | Member/document/SSI counts match what the Documents explorer and SSI panels show; Fund Flow Document line shows its filename or "not created yet" |
+
+## FR-14 — Remittance
+
+TC-14.1–14.5 are verifiable today against the readiness *display* in the Remittances panel (built); TC-14.6–14.7 require remittance *execution*, which isn't built yet.
+
+| ID | Scenario | Role | Steps | Expected |
+|---|---|---|---|---|
+| TC-14.1 | Remittance enabled for a validated party | Ops Team Member | View the Remittance panel for a party whose Standing Instruction is Checker-validated | Remittance to that party is shown as enabled/available |
+| TC-14.2 | Remittance disabled — pending Checker review | Ops Team Member | View the Remittance panel for a party whose Standing Instruction is still pending Checker review | Remittance to that party is disabled — cannot be initiated |
+| TC-14.3 | Remittance disabled — rejected Standing Instruction | Ops Team Member | View the Remittance panel for a party whose Standing Instruction was rejected (FR-10 mismatch) | Remittance to that party is disabled — cannot be initiated |
+| TC-14.4 | Mixed deal — some parties cleared, some not | Ops Team Member | On a deal with multiple lenders where only some are Checker-validated | Remittance is independently enabled for the validated lenders and disabled for the rest — one party's status never unblocks or blocks another's |
+| TC-14.5 | Third-party recipient follows the same gate | Ops Team Member | View the Remittance panel for a non-borrower recipient (e.g. a title company per FR-12) | Same validated-Standing-Instruction gating rule applies — no special bypass for third parties |
+| TC-14.6 | Remittance amount matches the Fund Flow Document | Ops Team Member | View the amount shown for an enabled remittance | Amount matches what FR-13's Fund Flow Document states for that party, not a value from elsewhere |
+| TC-14.7 | Blocked remittance attempt is logged as blocked, not silently ignored | Ops Team Member | Attempt to execute a remittance that is currently disabled | Action is refused with a clear reason (Standing Instruction not yet validated); attempt is not silently dropped |
+| TC-14.8 | Executed remittance is logged | Ops Team Member | Execute an enabled remittance | Action is logged per FR-7 (who, when, party, amount) |
+
 ## Deployment Model & Multi-Product Support
 
 | ID | Scenario | Role | Steps | Expected |

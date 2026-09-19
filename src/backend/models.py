@@ -29,6 +29,10 @@ class Deal(Base):
     status = Column(String, default="open")
     created_by_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
+    # FR-13: which document (in Funding Docs) is THE Fund Flow / Settlement
+    # and Closing Document for this deal — set by generating or uploading
+    # one (routes/funding_document.py), never inferred from filename/folder.
+    fund_flow_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
 
     created_by = relationship("User", foreign_keys=[created_by_id])
 

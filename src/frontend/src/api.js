@@ -76,8 +76,45 @@ export function listDocuments(dealId) {
   return apiRequest(`/deals/${dealId}/documents`);
 }
 
+// Also how a document is "deleted" — moving it to the special "Deleted"
+// folder, same endpoint, no separate delete call.
+export function moveDocument(dealId, documentId, folder) {
+  return apiRequest(`/deals/${dealId}/documents/${documentId}/move`, {
+    method: "POST",
+    body: JSON.stringify({ folder }),
+  });
+}
+
 export function compareDocuments(dealId, docAId, docBId) {
   return apiRequest(`/deals/${dealId}/documents/compare?doc_a=${docAId}&doc_b=${docBId}`);
+}
+
+export function getFundingDocument(dealId) {
+  return apiRequest(`/deals/${dealId}/funding-document`);
+}
+
+export function generateFundingDocument(dealId, payload) {
+  return apiRequest(`/deals/${dealId}/funding-document/generate`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+// Multipart, same reasoning as uploadDocuments — can't go through apiRequest.
+export async function uploadFundingDocument(dealId, file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  const token = getToken();
+  const response = await fetch(`${API_BASE}/deals/${dealId}/funding-document/upload`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: "Upload failed" }));
+    throw new Error(error.detail);
+  }
+  return response.json();
 }
 
 export function listStandingInstructions(dealId) {

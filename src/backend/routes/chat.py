@@ -8,11 +8,19 @@ from models import Document, Message, StandingInstruction, User, DealMember
 from schemas import MessageCreate, MessageOut
 from security import get_current_user
 from routes.deals import require_deal_membership, get_or_create_deal_agent, get_deal_members
+from routes.documents import deal_storage_path
+from funding_document import generate_funding_document
 import ai_client
 
 router = APIRouter()
 
 MENTION_PATTERN = re.compile(r"@(\w+)")
+
+GENERATE_FUNDING_PATTERN = re.compile(r"^generate-funding-document(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
+FUNDING_USAGE = (
+    "/generate-funding-document <loan_amount> <interest_rate> [<upfront_fee> <legal_fee>]\n"
+    "Example: /generate-funding-document 2000000 8.25 20000 8975 (amount, rate, upfront fee, legal fee)"
+)
 
 
 @router.get("/agent-commands")
@@ -38,6 +46,13 @@ def build_deal_context(deal, db: Session) -> dict:
     message_count = db.query(Message).filter(Message.deal_id == deal.id).count()
     documents = db.query(Document).filter(Document.deal_id == deal.id).all()
     standing_instructions = db.query(StandingInstruction).filter(StandingInstruction.deal_id == deal.id).all()
+
+    fund_flow_document = None
+    if deal.fund_flow_document_id:
+        ff_doc = db.query(Document).filter(Document.id == deal.fund_flow_document_id).first()
+        if ff_doc:
+            fund_flow_document = {"filename": ff_doc.original_filename}
+
     return {
         "title": deal.title,
         "reference": deal.reference,
@@ -54,7 +69,38 @@ def build_deal_context(deal, db: Session) -> dict:
             }
             for s in standing_instructions
         ],
+        "fund_flow_document": fund_flow_document,
     }
+
+
+def handle_generate_funding_command(deal, current_user: User, agent: User, db: Session, args_text: str) -> None:
+    # A real write action (a new Document row, Deal.fund_flow_document_id),
+    # so this is handled directly here — deterministic, DB-touching — the
+    # same reasoning as the ops-manager-mention-grants-membership rule below,
+    # not routed through ai_client/ai_api, which has no DB access to do it.
+    if current_user.role != "deal_team":
+        db.add(Message(deal_id=deal.id, user_id=agent.id, text="Only a Deal Team member can generate the Fund Flow Document.", level="error"))
+        db.commit()
+        return
+
+    parts = args_text.split()
+    if len(parts) < 2:
+        db.add(Message(deal_id=deal.id, user_id=agent.id, text=FUNDING_USAGE, level="info"))
+        db.commit()
+        return
+
+    try:
+        loan_amount = float(parts[0])
+        interest_rate = float(parts[1])
+        upfront_fee = float(parts[2]) if len(parts) > 2 else 0.0
+        legal_fee = float(parts[3]) if len(parts) > 3 else 0.0
+    except ValueError:
+        db.add(Message(deal_id=deal.id, user_id=agent.id, text=f"Couldn't read those as numbers.\n{FUNDING_USAGE}", level="error"))
+        db.commit()
+        return
+
+    storage_path = deal_storage_path(deal.id)
+    generate_funding_document(db, deal, current_user, agent, storage_path, loan_amount, interest_rate, upfront_fee, legal_fee)
 
 
 @router.post("/deals/{deal_id}/messages", response_model=MessageOut)
@@ -76,10 +122,15 @@ def post_message(deal_id: int, payload: MessageCreate, current_user: User = Depe
     if agent.username in mentioned_usernames:
         match = re.search(rf"@{re.escape(agent.username)}\b(.*)", payload.text, re.DOTALL)
         command_text = match.group(1).strip() if match else ""
-        deal_context = build_deal_context(deal, db)
-        reply_text = ai_client.agent_respond(command_text, agent.name, agent.username, deal_context)
-        db.add(Message(deal_id=deal_id, user_id=agent.id, text=reply_text, level="info"))
-        db.commit()
+
+        generate_match = GENERATE_FUNDING_PATTERN.match(command_text)
+        if generate_match:
+            handle_generate_funding_command(deal, current_user, agent, db, (generate_match.group(1) or "").strip())
+        else:
+            deal_context = build_deal_context(deal, db)
+            reply_text = ai_client.agent_respond(command_text, agent.name, agent.username, deal_context)
+            db.add(Message(deal_id=deal_id, user_id=agent.id, text=reply_text, level="info"))
+            db.commit()
 
     # An Ops Manager @mentioning a real person is the actual assignment action
     # (FR-1/FR-4), not just decorative text: it grants that person access to

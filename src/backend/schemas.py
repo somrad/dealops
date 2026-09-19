@@ -79,6 +79,35 @@ class DocumentOut(BaseModel):
         from_attributes = True
 
 
+class DocumentMoveRequest(BaseModel):
+    folder: str
+
+
+class FundingDocumentGenerateRequest(BaseModel):
+    loan_amount: float
+    interest_rate: float
+    upfront_fee: float = 0
+    legal_fee: float = 0
+    currency: str = "USD"
+
+
+class ReconciliationEntryOut(BaseModel):
+    name: str
+    status: str
+    confirmed: bool
+
+
+class ReconciliationOut(BaseModel):
+    borrower: List[ReconciliationEntryOut] = []
+    lenders: List[ReconciliationEntryOut] = []
+    third_party: List[ReconciliationEntryOut] = []
+
+
+class FundingDocumentOut(BaseModel):
+    document: Optional[DocumentOut] = None
+    reconciliation: ReconciliationOut
+
+
 class DiffSegmentOut(BaseModel):
     text: str
     changed: bool = False
@@ -106,9 +135,13 @@ class SsiActivityItemOut(BaseModel):
 class StandingInstructionOut(BaseModel):
     id: int
     document_id: int
-    document_filename: str
-    document_folder: str
-    added_by: UserOut
+    # Optional: a StandingInstruction's source document should never
+    # disappear (deletion is a soft move to "Deleted", never a hard
+    # remove — see routes/documents.py), but this stays defensive in case
+    # data ever ends up inconsistent, rather than 500ing the whole list.
+    document_filename: Optional[str] = None
+    document_folder: Optional[str] = None
+    added_by: Optional[UserOut] = None
     account_holder_name: Optional[str] = None
     bank_name: Optional[str] = None
     # Never the full number, even to a Checker — blind re-entry only means

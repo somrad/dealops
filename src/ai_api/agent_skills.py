@@ -67,6 +67,25 @@ def list_pending_validations(deal: dict) -> str:
     return "\n".join(lines)
 
 
+def funding_document_status(deal: dict) -> str:
+    # Read-only, same reasoning as list_pending_validations — generating or
+    # uploading the Fund Flow Document is a write (a new Document row, a
+    # Deal.fund_flow_document_id update), which ai_api can't do without a DB
+    # session. This just reports status and points at the real action.
+    ff = deal.get("fund_flow_document")
+    if ff:
+        return (
+            f'Fund Flow / Settlement and Closing Document on file: "{ff["filename"]}".\n'
+            f"Open Remittances (left rail) to review reconciliation or regenerate it."
+        )
+    return (
+        "No Fund Flow / Settlement and Closing Document yet for this deal.\n"
+        "Only a Deal Team member can create one — open Remittances (left rail) to "
+        "generate it from the deal's standing instructions, or upload an existing "
+        "settlement/closing PDF there."
+    )
+
+
 # Registry of agent commands/skills. Add new capabilities here as they're
 # built — each is a function taking the deal context dict and returning the
 # reply text. Nothing else needs to change to add one.
@@ -86,6 +105,17 @@ AGENT_COMMANDS = {
     "validate": {
         "handler": list_pending_validations,
         "help": "validate — list standing instructions awaiting Checker validation",
+    },
+    "generate-funding-document": {
+        "handler": funding_document_status,
+        # The real handler for this now lives in backend/routes/chat.py
+        # (GENERATE_FUNDING_PATTERN) — a write action needs a DB session,
+        # which this service never has — so it intercepts the exact command
+        # before it ever reaches here. This entry stays registered purely so
+        # /commands (the frontend's autocomplete) still lists it with the
+        # right usage; funding_document_status() below is unreachable in
+        # normal use, kept only as a harmless fallback.
+        "help": "generate-funding-document <amount> <rate> [<upfront_fee> <legal_fee>] — generate the Fund Flow Document (Deal Team only)",
     },
 }
 

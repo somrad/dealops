@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routes import auth, deals, chat, users, documents, standing_instructions, activity
+from routes import auth, deals, chat, users, documents, standing_instructions, activity, funding_document
 
 app = FastAPI(title="dealops POC")
 
@@ -19,3 +19,4 @@ app.include_router(users.router)
 app.include_router(documents.router)
 app.include_router(standing_instructions.router)
 app.include_router(activity.router)
+app.include_router(funding_document.router)

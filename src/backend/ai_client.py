@@ -6,11 +6,12 @@ import httpx
 AI_API_BASE_URL = "http://localhost:8001"
 
 
-def classify_document(filename: str, content: bytes, content_type: str) -> str:
+def classify_document(filename: str, content: bytes, content_type: str) -> dict:
     files = {"file": (filename, content, content_type or "application/octet-stream")}
+    # LLM call on the other end now (was rule-based) — same longer timeout as extraction.
     response = httpx.post(f"{AI_API_BASE_URL}/classify-document", files=files, timeout=30)
     response.raise_for_status()
-    return response.json()["folder"]
+    return response.json()  # {"folder": ..., "model_provider": ..., "model_name": ...}
 
 
 def extract_payment_details(filename: str, content: bytes, content_type: str) -> dict:
