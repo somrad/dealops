@@ -47,6 +47,12 @@ def get_funding_document(deal_id: int, current_user: User = Depends(get_current_
 def get_fund_flow_diagram(deal_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # Powers the Deal Map's visual fund-flow diagram — a reshape of the
     # same deal financial model the PDF and Remittances also read from.
+    # Deliberately a fast, pure DB read — NOT re-synced against documents
+    # here. The founder's own call, after feeling it firsthand: re-running
+    # extraction on every Deal Map click made a multi-document deal take
+    # several seconds to open for a view that's supposed to be instant.
+    # Freshness still comes from the Generate panel (a real editing action)
+    # and from upload/move time — Deal Map just shows what's already known.
     # See build_diagram_data() in funding_document.py.
     deal = require_deal_membership(deal_id, current_user, db)
     return build_diagram_data(db, deal)
@@ -56,16 +62,11 @@ def get_fund_flow_diagram(deal_id: int, current_user: User = Depends(get_current
 def get_financial_model(deal_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # The Generate Fund Flow Document panel's data source: every line item
     # known so far (extracted or manually entered), and what's still
-    # missing — the "ask only for what's missing" form reads this.
+    # missing — the "ask only for what's missing" form reads this. Also a
+    # real click (opening the panel), not the poll — safe to re-sync here.
     require_deal_membership(deal_id, current_user, db)
-    model = financial_model.get_deal_financial_model(db, deal_id)
-    if not model["has_lines"]:
-        # Lazily backfill from documents already on file (e.g. uploaded
-        # before this feature existed) rather than showing an empty model
-        # when there's real data to derive it from.
-        financial_model.sync_all_financial_lines_for_deal(db, deal_id)
-        model = financial_model.get_deal_financial_model(db, deal_id)
-    return model
+    financial_model.sync_all_financial_lines_for_deal(db, deal_id)
+    return financial_model.get_deal_financial_model(db, deal_id)
 
 
 @router.post("/deals/{deal_id}/financial-model/fill", response_model=DealFinancialModelOut)

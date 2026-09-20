@@ -191,6 +191,10 @@ def generate_funding_document(db: Session, deal: Deal, current_user: User, agent
     # ValueError, caught by the route as a 400, if the model isn't complete
     # or doesn't balance; filling in missing amounts happens through the
     # separate financial-model endpoints BEFORE this is called.
+    #
+    # Re-syncs first — a real click ("Save & Generate"), not the poll, so
+    # the generated document reflects whatever's on file at THIS moment.
+    financial_model.sync_all_financial_lines_for_deal(db, deal.id)
     model = financial_model.get_deal_financial_model(db, deal.id)
     if not model["has_lines"]:
         raise ValueError("No financial line items on file yet. Upload Borrower/Lenders/3rd Party documents first.")

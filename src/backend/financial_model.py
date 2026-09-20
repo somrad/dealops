@@ -27,16 +27,27 @@ def sync_financial_lines_for_document(db: Session, deal_id: int, document: Docum
     # the document's own text (ai_api's extract_deal_line_items) —
     # deliberately NOT derived from whether this document's separate
     # bank-detail (StandingInstruction) extraction happened to succeed.
+    #
+    # Called on every read now (see get_deal_financial_model()), not just
+    # once at upload time — this is what makes a corrected document
+    # self-healing without needing a manual delete-and-resync. A line a
+    # human explicitly typed in (amount_source == "manual_entry") is never
+    # silently erased just because a fresh extraction pass still finds
+    # nothing for it — re-syncing must never lose a human's entered value.
     role_flow = FOLDER_ROLE.get(document.folder)
     if role_flow is None:
         return
     role, flow = role_flow
 
-    # Re-syncing (a folder move, a corrected re-upload) replaces this
-    # document's own lines rather than accumulating duplicates.
-    db.query(DealFinancialLine).filter(DealFinancialLine.document_id == document.id).delete()
+    existing = db.query(DealFinancialLine).filter(DealFinancialLine.document_id == document.id).all()
 
     if extracted_items:
+        # Fresh extraction found real content — this always wins, even over
+        # a previous manual entry, since a corrected/re-read document is
+        # more authoritative than a placeholder value someone typed in
+        # before the real content was available.
+        for l in existing:
+            db.delete(l)
         for item in extracted_items:
             amount = item.get("amount")
             db.add(DealFinancialLine(
@@ -47,11 +58,15 @@ def sync_financial_lines_for_document(db: Session, deal_id: int, document: Docum
                 amount_source="extracted_from_document" if amount is not None else None,
                 document_id=document.id,
             ))
+    elif any(l.amount_source == "manual_entry" for l in existing):
+        # Extraction (still) finds nothing, but a human already filled this
+        # document's line in by hand — keep it exactly as-is.
+        return
     else:
-        # Extraction found nothing at all for this party/document — still
-        # materialize one placeholder line (role 1a/1b: a party's existence
-        # is established by the document itself, so it must be asked about,
-        # not silently absent from the model).
+        # Nothing extracted, nothing manually entered yet — (re)create the
+        # placeholder so the party still shows up as something to fill in.
+        for l in existing:
+            db.delete(l)
         fallback_name = os.path.splitext(document.original_filename)[0].replace("_", " ").replace("-", " ").strip().title()
         db.add(DealFinancialLine(
             deal_id=deal_id, flow=flow, role=role,
@@ -99,6 +114,20 @@ def _line_out(line: DealFinancialLine) -> dict:
 
 
 def get_deal_financial_model(db: Session, deal_id: int) -> dict:
+    # Deliberately a PURE READ — does not call sync_all_financial_lines_for_deal()
+    # itself. That call is expensive (real LLM calls, one per document) and
+    # this function is reached from routes/documents.py's/DealRoomPage.jsx's
+    # 3-second background poll (GET /deals/{id}/funding-document, used to
+    # keep the Remittances summary fresh) via get_remittance_readiness() ->
+    # build_funding_document_out(). Putting the resync in here once caused
+    # every poll tick to kick off a fresh multi-document extraction pass
+    # before the previous one even finished, overwhelming the backend on any
+    # deal with more than a couple of documents.
+    #
+    # Callers that ARE a real user action — not a timer — call
+    # sync_all_financial_lines_for_deal() themselves first: the fund-flow-
+    # diagram and financial-model routes (Deal Map / Generate panel clicks)
+    # and generate_funding_document() (the Save & Generate / Save click).
     all_lines = db.query(DealFinancialLine).filter(DealFinancialLine.deal_id == deal_id).all()
 
     # Only current (non-superseded, non-deleted) documents' lines count —
@@ -208,10 +237,16 @@ def fill_missing_line(db: Session, deal_id: int, line_id: int, amount: float, cu
 
 
 def sync_all_financial_lines_for_deal(db: Session, deal_id: int) -> None:
-    # Rebuilds the bottom-up model for every current document already on
-    # file in a party/economics folder — used once, lazily, the first time
-    # a deal's financial model is requested and it has documents but no
-    # lines yet (e.g. documents uploaded before this feature existed).
+    # Re-reads EVERY current document in a financial-economics folder and
+    # re-runs extraction, every single time this is called — not just the
+    # first time a deal has zero lines. Called at the top of
+    # get_deal_financial_model(), so every consumer (Deal Map's diagram,
+    # the Generate panel, Remittances, and generation itself) always
+    # operates on freshly re-extracted data. This is deliberately the
+    # founder's own call: it trades a fast DB read for real latency and
+    # LLM cost on every view, in exchange for the model never going stale
+    # without someone noticing — no more manual delete-and-resync needed
+    # when a document turns out to be wrong or gets corrected.
     docs = db.query(Document).filter(Document.deal_id == deal_id, Document.folder.in_(FOLDER_ROLE.keys())).all()
     superseded_ids = {d.supersedes_id for d in db.query(Document).filter(Document.deal_id == deal_id).all() if d.supersedes_id}
     heads = [d for d in docs if d.id not in superseded_ids]
@@ -219,13 +254,16 @@ def sync_all_financial_lines_for_deal(db: Session, deal_id: int) -> None:
     from routes.documents import deal_storage_path
     storage_path = deal_storage_path(deal_id)
     for doc in heads:
-        already = db.query(DealFinancialLine).filter(DealFinancialLine.document_id == doc.id).first()
-        if already is not None:
-            continue
         stored_path = os.path.join(storage_path, doc.stored_filename)
         if not os.path.exists(stored_path):
             continue
         with open(stored_path, "rb") as f:
             content = f.read()
-        result = ai_client.extract_deal_line_items(doc.original_filename, content, doc.content_type, doc.folder)
+        try:
+            result = ai_client.extract_deal_line_items(doc.original_filename, content, doc.content_type, doc.folder)
+        except Exception:
+            # ai_api unreachable/erroring on this one document shouldn't
+            # break the whole page — leave that document's existing lines
+            # as they were and keep going with the rest.
+            continue
         sync_financial_lines_for_document(db, deal_id, doc, result["items"])

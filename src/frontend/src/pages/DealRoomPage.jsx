@@ -1702,42 +1702,64 @@ function DealRoomPage({ user, onLogout }) {
                   </div>
 
                   <h3 style={{ marginTop: "1.25rem" }}>Sources ({financialModel.sources.length})</h3>
-                  {financialModel.sources.map((line) => (
-                    <div className="sidebar-row" key={line.id}>
-                      <span>{line.category} — {line.party_name}</span>
-                      {line.amount === null ? (
-                        <input
-                          type="number" step="0.01" placeholder="Amount" style={{ width: "130px" }}
-                          value={fillValues[line.id] ?? ""}
-                          onChange={(e) => setFillValues({ ...fillValues, [line.id]: e.target.value })}
-                        />
-                      ) : (
-                        <strong>{line.currency} {line.amount.toLocaleString()}</strong>
-                      )}
-                    </div>
-                  ))}
+                  <div className="financial-table-wrap">
+                    <table className="financial-table">
+                      <tbody>
+                        {financialModel.sources.map((line) => (
+                          <tr key={line.id}>
+                            <td>
+                              <span className="financial-table-category">{line.category}</span>
+                              <span className="financial-table-party">{line.party_name}</span>
+                            </td>
+                            <td className="financial-table-amount">
+                              {line.amount === null ? (
+                                <input
+                                  type="number" step="0.01" placeholder="Amount"
+                                  value={fillValues[line.id] ?? ""}
+                                  onChange={(e) => setFillValues({ ...fillValues, [line.id]: e.target.value })}
+                                />
+                              ) : (
+                                <>{line.currency} {line.amount.toLocaleString()}</>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
                   <h3 style={{ marginTop: "1.25rem" }}>Uses ({financialModel.uses.length})</h3>
-                  {financialModel.uses.map((line) => (
-                    <div className="sidebar-row" key={line.id}>
-                      <span>{line.category} — {line.party_name}</span>
-                      {line.role === "borrower" ? (
-                        line.amount === null ? (
-                          <span className="muted small">Pending — calculated once every other amount is known</span>
-                        ) : (
-                          <strong>{line.currency} {line.amount.toLocaleString()} <span className="muted small">(derived)</span></strong>
-                        )
-                      ) : line.amount === null ? (
-                        <input
-                          type="number" step="0.01" placeholder="Amount" style={{ width: "130px" }}
-                          value={fillValues[line.id] ?? ""}
-                          onChange={(e) => setFillValues({ ...fillValues, [line.id]: e.target.value })}
-                        />
-                      ) : (
-                        <strong>{line.currency} {line.amount.toLocaleString()}</strong>
-                      )}
-                    </div>
-                  ))}
+                  <div className="financial-table-wrap">
+                    <table className="financial-table">
+                      <tbody>
+                        {financialModel.uses.map((line) => (
+                          <tr key={line.id}>
+                            <td>
+                              <span className="financial-table-category">{line.category}</span>
+                              <span className="financial-table-party">{line.party_name}</span>
+                            </td>
+                            <td className="financial-table-amount">
+                              {line.role === "borrower" ? (
+                                line.amount === null ? (
+                                  <span className="muted small">Pending</span>
+                                ) : (
+                                  <>{line.currency} {line.amount.toLocaleString()}<span className="muted small financial-table-tag">(derived)</span></>
+                                )
+                              ) : line.amount === null ? (
+                                <input
+                                  type="number" step="0.01" placeholder="Amount"
+                                  value={fillValues[line.id] ?? ""}
+                                  onChange={(e) => setFillValues({ ...fillValues, [line.id]: e.target.value })}
+                                />
+                              ) : (
+                                <>{line.currency} {line.amount.toLocaleString()}</>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
                   {modelError && <p className="muted small" style={{ marginTop: "0.75rem", color: "var(--color-red, #dc2626)" }}>{modelError}</p>}
 

@@ -3,7 +3,8 @@
 // computes server-side (see build_diagram_data() in funding_document.py),
 // not a second calculation. Layout is computed from however many lenders/
 // fee lines/3rd parties a given deal actually has — nothing here is
-// hardcoded to a specific deal's shape.
+// hardcoded to a specific deal's shape, and every box sizes itself to its
+// own wrapped text rather than assuming a fixed width fits everything.
 
 const COLORS = {
   source: "#2563eb",
@@ -13,36 +14,52 @@ const COLORS = {
   legal: "#7c3aed",
 };
 
-const NODE_W = 230;
-const HUB_W = 300;
+const MIN_NODE_W = 190;
+const MAX_NODE_W = 440;
+const NODE_PAD_X = 32; // left+right internal padding a box reserves around its text
+const HUB_W = 280;
 const HUB_H = 130;
-const GAP = 22;
+const GAP = 24;
 const PAD_Y = 40;
 const SOURCE_X = 40;
-const HUB_X = 460;
-const USE_X = 900;
-const CANVAS_W = 1170;
+const LEFT_CORRIDOR = 90;
+const RIGHT_CORRIDOR = 130;
+const RIGHT_MARGIN = 40;
+// Generously estimated character widths (overestimate on purpose — a box
+// slightly wider than strictly necessary is fine; a box that clips real
+// text on both edges, because a mid-weight sans-serif's actual rendered
+// width was higher than assumed, is the bug this is specifically guarding
+// against).
+const NAME_CHAR_W = 8.6; // bold 13px
+const SUB_CHAR_W = 7.1; // regular 11px
+const BOX_H_PAD = 22;
+const NAME_LINE_H = 18;
+const SUB_LINE_H = 15;
 
 function formatMoney(amount, currency) {
   const n = Math.round(Number(amount) || 0);
   return `${currency} ${n.toLocaleString()}`;
 }
 
-// Long lender/borrower/3rd-party names and fee-line details don't fit a
-// 230px-wide box on one line — wrap/truncate rather than let SVG text
-// silently overflow past the shape's edges.
-function truncate(text, maxChars) {
-  if (text.length <= maxChars) return text;
-  return text.slice(0, Math.max(0, maxChars - 1)).trimEnd() + "…";
+function estWidth(text, charW) {
+  return text.length * charW;
 }
 
-function wrapLabel(text, maxCharsPerLine = 24, maxLines = 2) {
-  const words = text.split(" ");
+// Fits text into up to `maxLines` lines that each stay within `maxTextW` —
+// tries a single line FIRST (most party names/categories fit on one line
+// once the box is allowed to be wide), only wrapping when a line would
+// genuinely exceed the width ceiling, and only ellipsis-truncating the
+// very last line if it still doesn't fit after wrapping.
+function fitLines(text, charW, maxTextW, maxLines) {
+  const str = String(text || "");
+  if (estWidth(str, charW) <= maxTextW) return [str];
+
+  const words = str.split(" ");
   const lines = [];
   let current = "";
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length <= maxCharsPerLine || !current) {
+    if (estWidth(candidate, charW) <= maxTextW || !current) {
       current = candidate;
     } else {
       lines.push(current);
@@ -54,33 +71,56 @@ function wrapLabel(text, maxCharsPerLine = 24, maxLines = 2) {
     }
   }
   if (current && lines.length < maxLines) lines.push(current);
-  const consumedWords = lines.join(" ").split(" ").length;
-  if (lines.length && (consumedWords < words.length || lines[lines.length - 1].length > maxCharsPerLine)) {
-    const lastIdx = lines.length - 1;
-    lines[lastIdx] = truncate(lines[lastIdx], maxCharsPerLine);
+  if (lines.length === 0) return [str];
+
+  const lastIdx = lines.length - 1;
+  if (estWidth(lines[lastIdx], charW) > maxTextW) {
+    let t = lines[lastIdx];
+    while (t.length > 1 && estWidth(t + "…", charW) > maxTextW) t = t.slice(0, -1);
+    lines[lastIdx] = t + "…";
   }
-  return lines.length ? lines : [""];
+  return lines;
+}
+
+// Sizes a box to whatever its own name + category actually need at their
+// natural (unwrapped) width, up to MAX_NODE_W — "as wide as required,"
+// wrapping only as a last resort for a name/category that's genuinely
+// longer than the width ceiling allows on one line.
+function layoutNode(name, category) {
+  const maxTextW = MAX_NODE_W - NODE_PAD_X;
+  const nameLines = fitLines(name, NAME_CHAR_W, maxTextW, 2);
+  const categoryLines = fitLines(category, SUB_CHAR_W, maxTextW, 2);
+  const widest = Math.max(
+    ...nameLines.map((l) => estWidth(l, NAME_CHAR_W)),
+    ...categoryLines.map((l) => estWidth(l, SUB_CHAR_W)),
+  );
+  const width = Math.min(MAX_NODE_W, Math.max(MIN_NODE_W, Math.ceil(widest) + NODE_PAD_X));
+  const height = BOX_H_PAD + nameLines.length * NAME_LINE_H + 8 + categoryLines.length * SUB_LINE_H + 10;
+  return { nameLines, categoryLines, width, height };
 }
 
 function stackNodes(nodes, x, canvasHeight) {
   const totalH = nodes.reduce((sum, n) => sum + n.height, 0) + GAP * Math.max(0, nodes.length - 1);
   let y = (canvasHeight - totalH) / 2;
   return nodes.map((n) => {
-    const positioned = { ...n, x, y, w: NODE_W };
+    const positioned = { ...n, x, y };
     y += n.height + GAP;
     return positioned;
   });
 }
 
-function curvePath(x1, y1, x2, y2) {
-  const midX = (x1 + x2) / 2;
-  return `M ${x1},${y1} C ${midX},${y1} ${midX},${y2} ${x2},${y2}`;
+// Right-angle (elbow) connector: out horizontally from the source, up/down
+// through a shared vertical corridor, then horizontally into the target.
+// Reads like a flowchart instead of a tangle of crossing curves once there
+// are more than a handful of boxes on one side.
+function elbowPath(x1, y1, x2, y2, corridorX) {
+  return `M ${x1},${y1} H ${corridorX} V ${y2} H ${x2}`;
 }
 
 function buildLayout(data) {
   const sourceRaw = data.sources.map((s) => {
-    const nameLines = wrapLabel(s.name, 22, 2);
-    return { type: "source", name: s.name, nameLines, amount: s.amount, height: 52 + nameLines.length * 16 };
+    const node = layoutNode(s.name, s.category || "Lender");
+    return { type: "source", name: s.name, amount: s.amount, ...node };
   });
 
   // Every USE line gets its OWN box — each one is a separate remittance (a
@@ -90,36 +130,35 @@ function buildLayout(data) {
   // shows as four boxes here, not one summed total.
   const useRaw = [];
   (data.borrower_lines || []).forEach((b) => {
-    const nameLines = wrapLabel(b.name, 22, 2);
-    useRaw.push({
-      type: "borrower", name: b.name, nameLines, amount: b.amount,
-      height: 54 + nameLines.length * 16, label: b.category || "Borrower",
-    });
+    const node = layoutNode(b.name, b.category || "Borrower");
+    useRaw.push({ type: "borrower", name: b.name, amount: b.amount, ...node });
   });
   (data.fee_lines || []).forEach((f) => {
-    const nameLines = wrapLabel(f.party, 22, 2);
-    useRaw.push({
-      type: "fee", name: f.party, nameLines, amount: f.amount,
-      height: 54 + nameLines.length * 16, label: f.section,
-    });
+    const node = layoutNode(f.party, f.section);
+    useRaw.push({ type: "fee", name: f.party, amount: f.amount, ...node });
   });
   (data.legal_lines || []).forEach((l) => {
-    const nameLines = wrapLabel(l.party, 22, 2);
-    useRaw.push({
-      type: "legal", name: l.party, nameLines, amount: l.amount,
-      height: 54 + nameLines.length * 16, label: l.category || "3rd Party Provider",
-    });
+    const node = layoutNode(l.party, l.category || "3rd Party Provider");
+    useRaw.push({ type: "legal", name: l.party, amount: l.amount, ...node });
   });
 
   const sourceTotalH = sourceRaw.reduce((s, n) => s + n.height, 0) + GAP * Math.max(0, sourceRaw.length - 1);
   const useTotalH = useRaw.reduce((s, n) => s + n.height, 0) + GAP * Math.max(0, useRaw.length - 1);
   const canvasHeight = Math.max(sourceTotalH, useTotalH, HUB_H + 40) + PAD_Y * 2;
 
-  const sources = stackNodes(sourceRaw, SOURCE_X, canvasHeight);
-  const uses = stackNodes(useRaw, USE_X, canvasHeight);
-  const hub = { x: HUB_X, y: (canvasHeight - HUB_H) / 2, w: HUB_W, h: HUB_H };
+  const maxSourceW = sourceRaw.reduce((m, n) => Math.max(m, n.width), MIN_NODE_W);
+  const maxUseW = useRaw.reduce((m, n) => Math.max(m, n.width), MIN_NODE_W);
+  const hubX = SOURCE_X + maxSourceW + LEFT_CORRIDOR;
+  const useX = hubX + HUB_W + RIGHT_CORRIDOR;
+  const canvasWidth = useX + maxUseW + RIGHT_MARGIN;
 
-  return { width: CANVAS_W, height: canvasHeight, sources, uses, hub };
+  const sources = stackNodes(sourceRaw, SOURCE_X, canvasHeight);
+  const uses = stackNodes(useRaw, useX, canvasHeight);
+  const hub = { x: hubX, y: (canvasHeight - HUB_H) / 2, w: HUB_W, h: HUB_H };
+  const leftCorridorX = SOURCE_X + maxSourceW + LEFT_CORRIDOR / 2;
+  const rightCorridorX = hubX + HUB_W + RIGHT_CORRIDOR / 2;
+
+  return { width: canvasWidth, height: canvasHeight, sources, uses, hub, leftCorridorX, rightCorridorX };
 }
 
 function FundFlowDiagram({ data, dealTitle, productLabel }) {
@@ -157,30 +196,31 @@ function FundFlowDiagram({ data, dealTitle, productLabel }) {
         {layout.sources.map((s, i) => {
           const y1 = s.y + s.height / 2;
           const y2 = layout.hub.y + layout.hub.h / 2;
-          const x1 = s.x + s.w;
+          const x1 = s.x + s.width;
           const x2 = layout.hub.x;
           return (
             <g key={`src-edge-${i}`}>
-              <path d={curvePath(x1, y1, x2, y2)} fill="none" stroke="#94a3b8" strokeWidth="2" markerEnd="url(#ffd-arrow)" />
-              <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 8} textAnchor="middle" className="ffd-edge-label">
+              <path d={elbowPath(x1, y1, x2, y2, layout.leftCorridorX)} fill="none" stroke="#94a3b8" strokeWidth="2" markerEnd="url(#ffd-arrow)" />
+              <text x={(layout.leftCorridorX + x1) / 2} y={y1 - 8} textAnchor="middle" className="ffd-edge-label">
                 {formatMoney(s.amount, currency)}
               </text>
             </g>
           );
         })}
 
-        {/* hub -> use connectors */}
+        {/* hub -> use connectors — label sits on the final leg, right next
+            to its own destination box, so it never clusters with other
+            edges' labels near the hub regardless of how many boxes there are */}
         {layout.uses.map((u, i) => {
           const y1 = layout.hub.y + layout.hub.h / 2;
           const y2 = u.y + u.height / 2;
           const x1 = layout.hub.x + layout.hub.w;
           const x2 = u.x;
-          const amount = u.amount;
           return (
             <g key={`use-edge-${i}`}>
-              <path d={curvePath(x1, y1, x2, y2)} fill="none" stroke="#94a3b8" strokeWidth="2" markerEnd="url(#ffd-arrow)" />
-              <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 8} textAnchor="middle" className="ffd-edge-label">
-                {formatMoney(amount, currency)}
+              <path d={elbowPath(x1, y1, x2, y2, layout.rightCorridorX)} fill="none" stroke="#94a3b8" strokeWidth="2" markerEnd="url(#ffd-arrow)" />
+              <text x={(layout.rightCorridorX + x2) / 2} y={y2 - 8} textAnchor="middle" className="ffd-edge-label">
+                {formatMoney(u.amount, currency)}
               </text>
             </g>
           );
@@ -189,11 +229,13 @@ function FundFlowDiagram({ data, dealTitle, productLabel }) {
         {/* source nodes */}
         {layout.sources.map((s, i) => (
           <g key={`src-${i}`}>
-            <rect x={s.x} y={s.y} width={s.w} height={s.height} rx="10" fill={COLORS.source} />
+            <rect x={s.x} y={s.y} width={s.width} height={s.height} rx="10" fill={COLORS.source} />
             {s.nameLines.map((line, li) => (
-              <text key={li} x={s.x + s.w / 2} y={s.y + 24 + li * 16} textAnchor="middle" className="ffd-node-label">{line}</text>
+              <text key={li} x={s.x + s.width / 2} y={s.y + 18 + li * NAME_LINE_H} textAnchor="middle" className="ffd-node-label">{line}</text>
             ))}
-            <text x={s.x + s.w / 2} y={s.y + 24 + s.nameLines.length * 16 + 8} textAnchor="middle" className="ffd-node-sub">Lender</text>
+            {s.categoryLines.map((line, li) => (
+              <text key={li} x={s.x + s.width / 2} y={s.y + 18 + s.nameLines.length * NAME_LINE_H + 10 + li * SUB_LINE_H} textAnchor="middle" className="ffd-node-sub">{line}</text>
+            ))}
           </g>
         ))}
 
@@ -213,11 +255,13 @@ function FundFlowDiagram({ data, dealTitle, productLabel }) {
           const fill = u.type === "borrower" ? COLORS.borrower : u.type === "fee" ? COLORS.fees : COLORS.legal;
           return (
             <g key={`use-${i}`}>
-              <rect x={u.x} y={u.y} width={u.w} height={u.height} rx="10" fill={fill} />
+              <rect x={u.x} y={u.y} width={u.width} height={u.height} rx="10" fill={fill} />
               {u.nameLines.map((line, li) => (
-                <text key={li} x={u.x + u.w / 2} y={u.y + 24 + li * 16} textAnchor="middle" className="ffd-node-label">{line}</text>
+                <text key={li} x={u.x + u.width / 2} y={u.y + 18 + li * NAME_LINE_H} textAnchor="middle" className="ffd-node-label">{line}</text>
               ))}
-              <text x={u.x + u.w / 2} y={u.y + 24 + u.nameLines.length * 16 + 8} textAnchor="middle" className="ffd-node-sub">{u.label}</text>
+              {u.categoryLines.map((line, li) => (
+                <text key={li} x={u.x + u.width / 2} y={u.y + 18 + u.nameLines.length * NAME_LINE_H + 10 + li * SUB_LINE_H} textAnchor="middle" className="ffd-node-sub">{line}</text>
+              ))}
             </g>
           );
         })}
