@@ -1,0 +1,705 @@
+<title>dealops Capabilities</title>
+<style>
+  :root {
+    --color-bg: #ffffff;
+    --color-surface: #f9fafb;
+    --color-border: #cbd5e1;
+    --color-text: #111827;
+    --color-text-muted: #6b7280;
+    --color-primary: #2563eb;
+    --color-primary-hover: #1d4ed8;
+    --color-primary-light: #eff6ff;
+    --radius: 10px;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 8px 30px rgba(17, 24, 39, 0.12);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #e5e7eb;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--color-text);
+  }
+
+  .deck {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 2.5rem 0 6rem;
+  }
+
+  .slide {
+    width: 1280px;
+    height: 720px;
+    max-width: 100%;
+    background: var(--color-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    margin: 0 auto 2.5rem;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    break-after: page;
+    position: relative;
+  }
+
+  .slide-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.75rem 3rem 0;
+    flex-shrink: 0;
+  }
+
+  .slide-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+  }
+
+  .slide-eyebrow::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    display: inline-block;
+  }
+
+  .slide-number {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .slide-title {
+    padding: 0.5rem 3rem 0;
+    font-size: 1.95rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    flex-shrink: 0;
+  }
+
+  .slide-title span { color: var(--color-primary); }
+
+  .slide-desc {
+    padding: 0.6rem 3rem 0;
+    font-size: 0.98rem;
+    color: var(--color-text-muted);
+    max-width: 900px;
+    line-height: 1.45;
+    flex-shrink: 0;
+  }
+
+  .slide-desc b { color: var(--color-text); font-weight: 600; }
+
+  .slide-media {
+    flex: 1;
+    margin: 1.1rem 3rem 1.75rem;
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+    background: var(--color-surface);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+    min-height: 0;
+  }
+
+  .slide-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: top center;
+    display: block;
+  }
+
+  .slide-media.video-media {
+    background: #0b1220;
+    align-items: center;
+  }
+
+  .slide-media video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* Title slide: the poster fills the whole frame */
+  .slide.title-slide {
+    padding: 0;
+  }
+
+  .slide.title-slide img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: top center;
+    background: white;
+  }
+
+  /* Text-only slide (the problem statement) */
+  .slide.text-slide {
+    justify-content: center;
+    padding: 0 5rem;
+  }
+
+  .slide.text-slide .slide-title {
+    padding: 0;
+    font-size: 2.6rem;
+  }
+
+  .slide.text-slide .slide-desc {
+    padding: 1.5rem 0 0;
+    font-size: 1.15rem;
+    max-width: 100%;
+  }
+
+  .bridge-diagram {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    margin-top: 2.5rem;
+  }
+
+  .bridge-box {
+    flex: 1;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+  }
+
+  .bridge-box h4 {
+    margin: 0 0 0.35rem;
+    font-size: 1.05rem;
+  }
+
+  .bridge-box p {
+    margin: 0;
+    color: var(--color-text-muted);
+    font-size: 0.92rem;
+  }
+
+  .bridge-arrow {
+    font-size: 1.5rem;
+    color: var(--color-primary);
+    flex-shrink: 0;
+  }
+
+  .bridge-center {
+    flex: 1.2;
+    background: var(--color-primary);
+    color: white;
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    text-align: center;
+  }
+
+  .bridge-center h4 { margin: 0 0 0.35rem; font-size: 1.1rem; }
+  .bridge-center p { margin: 0; opacity: 0.9; font-size: 0.92rem; }
+
+  /* Section divider slide (used to introduce a themed run of slides) */
+  .slide.section-slide {
+    background: var(--color-primary);
+    color: white;
+    justify-content: center;
+    padding: 0 5rem;
+  }
+
+  .slide.section-slide .slide-eyebrow { color: #bfdbfe; }
+  .slide.section-slide .slide-eyebrow::before { background: #bfdbfe; }
+
+  .slide.section-slide .slide-title {
+    padding: 0.75rem 0 0;
+    color: white;
+    font-size: 2.5rem;
+  }
+
+  .slide.section-slide .slide-desc {
+    padding: 1rem 0 0;
+    color: rgba(255, 255, 255, 0.85);
+    max-width: 750px;
+    font-size: 1.05rem;
+  }
+
+  /* Closing slide */
+  .slide.closing-slide {
+    background: #0b1220;
+    color: white;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 0 5rem;
+  }
+
+  .slide.closing-slide .slide-title {
+    padding: 0;
+    color: white;
+    font-size: 2.8rem;
+  }
+
+  .slide.closing-slide .slide-desc {
+    padding: 1.25rem 0 0;
+    color: rgba(255, 255, 255, 0.7);
+    max-width: 700px;
+  }
+
+  .roadmap-tags {
+    display: flex;
+    gap: 0.6rem;
+    margin-top: 2rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .roadmap-tags span {
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.82rem;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  @media print {
+    body { background: white; }
+    .deck { padding: 0; max-width: none; }
+    .slide { box-shadow: none; margin: 0; border-radius: 0; }
+  }
+</style>
+
+<div class="deck">
+
+  <!-- Title -->
+  <section class="slide title-slide">
+    <img src="images/dealops-poster.png" alt="dealops — built so a mistake never gets the chance">
+  </section>
+
+  <!-- The problem -->
+  <section class="slide text-slide">
+    <div class="slide-eyebrow">The Problem</div>
+    <h1 class="slide-title">The gap between <span>origination</span> and <span>servicing</span> is still manual.</h1>
+    <p class="slide-desc">
+      Commercial lending teams run deals through nCino for origination and Loan IQ for servicing —
+      two systems that don't talk to each other. Moving a deal from one to the other today means
+      rekeying terms, chasing documents, and reconciling covenants and payment details by hand.
+      dealops sits in between: a standalone workspace, not an integration into either system.
+    </p>
+    <div class="bridge-diagram">
+      <div class="bridge-box">
+        <h4>Origination</h4>
+        <p>Deal terms, parties, covenants — like an nCino export.</p>
+      </div>
+      <div class="bridge-arrow">&#8594;</div>
+      <div class="bridge-center">
+        <h4>dealops</h4>
+        <p>Deal Room, AI extraction, blind-verified payments, generated settlement statement.</p>
+      </div>
+      <div class="bridge-arrow">&#8594;</div>
+      <div class="bridge-box">
+        <h4>Servicing</h4>
+        <p>Standing instructions, remittance — ready for Loan IQ.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Full walkthrough video -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">See It In Action</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Login, dashboard, Deal Room — <span>in one take</span>.</h2>
+    <p class="slide-desc">A quick end-to-end walkthrough before we dig into individual capabilities.</p>
+    <div class="slide-media video-media">
+      <video controls preload="metadata" src="images/login_dashboard_dealroom.mov"></video>
+    </div>
+  </section>
+
+  <!-- Dashboard -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Deal Dashboard</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Every deal's shape, <span>at a glance</span>.</h2>
+    <p class="slide-desc">
+      Product, borrower, lenders, and every member — mirrored onto every tile from live deal data,
+      not a stale summary someone has to update.
+    </p>
+    <div class="slide-media"><img src="images/02-dashboard.png"></div>
+  </section>
+
+  <!-- Deal Room -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">The Deal Room</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">A <span>scoped workspace</span> per deal — chat, files, people.</h2>
+    <p class="slide-desc">
+      Slack-like, but purpose-built: staffing an Ops Team member happens by <b>@mentioning</b>
+      them right in the conversation — an Ops Manager's mention is what actually grants access,
+      logged automatically, no separate ticket or form.
+    </p>
+    <div class="slide-media"><img src="images/03-deal-room-chat.png"></div>
+  </section>
+
+  <!-- NEW: Staffing a deal via chat -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Staffing a Deal</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">"Can you assign an Ops person?" — <span>asked and answered in chat</span>.</h2>
+    <p class="slide-desc">
+      A Deal Team member asks for staffing right in the conversation. The Ops Manager already has
+      standing visibility into every deal, so they see the request immediately — no ticket, no
+      separate tool. They <b>@mention</b> an Ops Team member and a Checker directly in the thread,
+      and the deal's own bot posts the confirmation the moment each one is added.
+    </p>
+    <div class="slide-media video-media">
+      <video controls preload="metadata" src="images/createdeal_opsManager_and add ops team member.mov"></video>
+    </div>
+  </section>
+
+  <!-- NEW: Deal details drawer + bot -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Deal Details &amp; The Bot</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Pull out the details, <span>ask the bot the rest</span>.</h2>
+    <p class="slide-desc">
+      A slide-out drawer holds the deal's reference, product, status, and roster. For anything
+      else, the deal's own agent answers right in chat — a live summary, not a stale report.
+    </p>
+    <div class="slide-media video-media">
+      <video controls preload="metadata" src="images/dealDetail_pullout_and_bot_for the deal.mov"></video>
+    </div>
+  </section>
+
+  <!-- Upload + auto-foldering -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Document Intake</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Drop it in — <span>AI files it</span> for you.</h2>
+    <p class="slide-desc">
+      Drag-and-drop or a plain upload button. An LLM reads each document and routes it to the right
+      folder — Borrower, Lenders, Credit Verification, Funding Docs, 3rd Party Providers — no manual sorting.
+    </p>
+    <div class="slide-media"><img src="images/04-document-preview.png"></div>
+  </section>
+
+  <!-- NEW: Uploading + classifying, live -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Document Intake — Live</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Watch a real document <span>get classified</span> on the way in.</h2>
+    <p class="slide-desc">Upload to auto-foldering, start to finish, with the classification result posted back into chat.</p>
+    <div class="slide-media video-media">
+      <video controls preload="metadata" src="images/adding a document and classifying it.mov"></video>
+    </div>
+  </section>
+
+  <!-- NEW: Cross-role visibility -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Cross-Role Visibility</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">What the Deal Team uploads, <span>the Ops Team sees instantly</span>.</h2>
+    <p class="slide-desc">
+      One deal, one shared room — a document the Deal Team adds shows up for Ops immediately,
+      already foldered, already logged. No separate handoff step.
+    </p>
+    <div class="slide-media video-media">
+      <video controls preload="metadata" src="images/deal_teams_adds a document and what ops team member sees.mov"></video>
+    </div>
+  </section>
+
+  <!-- Version diffing -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Document Versioning</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Re-upload a corrected file — <span>see exactly what changed</span>.</h2>
+    <p class="slide-desc">
+      A new upload automatically nests under the version it replaces. Compare any two versions
+      side by side and only the real differences are highlighted — here, a single corrected
+      settlement account number between v1 and v2.
+    </p>
+    <div class="slide-media"><img src="images/15-document-diff.png"></div>
+  </section>
+
+  <!-- NEW: Comparing versions, live -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Document Versioning — Live</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Selecting two versions <span>and comparing them</span>, live.</h2>
+    <p class="slide-desc">The actual interaction: check two versions in the tree, compare, and read the diff.</p>
+    <div class="slide-media video-media">
+      <video controls preload="metadata" src="images/comparison between 2 versions.mov"></video>
+    </div>
+  </section>
+
+  <!-- GCS import -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Cloud Storage Import</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">No local file access? <span>Import straight from the cloud.</span></h2>
+    <p class="slide-desc">
+      Browse a shared Google Cloud Storage bucket right inside the Deal Room — real folder
+      navigation, click a file to preview it, then import. The file is copied server-side and
+      runs through the exact same classification pipeline as a normal upload.
+    </p>
+    <div class="slide-media"><img src="images/05-gcs-import.png"></div>
+  </section>
+
+  <!-- NEW: Collapsible panels -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Flexible Layout</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Hide chat, <span>make room for the document</span>.</h2>
+    <p class="slide-desc">
+      Every panel — documents, chat, and the various side views — collapses independently, so the
+      screen can be all about whatever you're actually looking at right now.
+    </p>
+    <div class="slide-media video-media">
+      <video controls preload="metadata" src="images/hide chat to make space for document.mov"></video>
+    </div>
+  </section>
+
+  <!-- Deal Map -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Deal Map</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">One panel, <span>the whole census</span>.</h2>
+    <p class="slide-desc">
+      Members by role, documents by folder, standing instructions by status, and the current
+      settlement document — a single-glance summary of exactly where a deal stands.
+    </p>
+    <div class="slide-media"><img src="images/06-deal-map.png"></div>
+  </section>
+
+  <!-- SSI extraction -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Standing Instructions</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Payment details, <span>read by AI</span> — never retyped.</h2>
+    <p class="slide-desc">
+      An LLM extracts bank name, account, and routing details straight from uploaded documents
+      and submits a standing instruction to Loan IQ automatically. Account numbers stay masked
+      everywhere — even here — until a Checker independently confirms them.
+    </p>
+    <div class="slide-media"><img src="images/07-standing-instructions.png"></div>
+  </section>
+
+  <!-- Slash commands -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Deal Room Agent</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Every deal has its own <span>bot</span> — ask it anything.</h2>
+    <p class="slide-desc">
+      <b>@mention</b> the deal's agent for a live summary, a document list, or standing-instruction
+      status — right in the chat, with slash-command autocomplete so nobody has to remember the syntax.
+    </p>
+    <div class="slide-media"><img src="images/17-slash-commands.png"></div>
+  </section>
+
+  <!-- Section divider: Checker -->
+  <section class="slide section-slide">
+    <div class="slide-eyebrow">FR-10</div>
+    <h1 class="slide-title">Shisa Kanko — 指差喚呼<br>Point and Call</h1>
+    <p class="slide-desc">
+      The safety mechanism at the center of dealops, modeled on Japanese rail practice: a value is
+      never accepted just because a machine read it. A human has to point, call it out, and
+      independently reproduce it — blind.
+    </p>
+  </section>
+
+  <!-- Shisa Kanko modal -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Blind Re-Entry</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Point. Call. <span>Confirm blind.</span></h2>
+    <p class="slide-desc">
+      A Checker re-types the account number themselves, from the source document — the extracted
+      value is <b>never shown to them first</b>. A match is the only thing that confirms it.
+    </p>
+    <div class="slide-media"><img src="images/11-shisa-kanko-validate.png"></div>
+  </section>
+
+  <!-- NEW: Checker validating live -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Blind Re-Entry — Live</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">The full check, <span>start to finish</span>.</h2>
+    <p class="slide-desc">Opening the evidence, reading the highlighted source document, and typing the number blind.</p>
+    <div class="slide-media video-media">
+      <video controls preload="metadata" src="images/how checker validates_pdf highlight_blind test for checker.mov"></video>
+    </div>
+  </section>
+
+  <!-- Evidence highlight -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Evidence &amp; Outcome</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">The exact spot the AI read from — <span>highlighted</span>, not hidden.</h2>
+    <p class="slide-desc">
+      Every standing instruction links back to the source document with the account holder, bank,
+      account, and routing details highlighted right where extraction found them — and every
+      Checker outcome, match or mismatch, is logged with who and when.
+    </p>
+    <div class="slide-media"><img src="images/16-evidence-highlight.png"></div>
+  </section>
+
+  <!-- NEW: Activity log -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Conversation Logging</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Every action, <span>one append-only timeline</span>.</h2>
+    <p class="slide-desc">
+      Chat messages and system events — uploads, classifications, extractions, validations — merge
+      into a single chronological log per deal. Nothing is ever edited or deleted out of it.
+    </p>
+    <div class="slide-media video-media">
+      <video controls preload="metadata" src="images/complete activity log for a deal.mov"></video>
+    </div>
+  </section>
+
+  <!-- Fund flow generate -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Fund Flow Document</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">The settlement statement, <span>generated</span>, not assembled by hand.</h2>
+    <p class="slide-desc">
+      Enter the loan economics once — borrower, lenders, and third parties are pulled automatically
+      from documents already on file. The reconciliation view confirms every party actually appears
+      in the statement driving remittance.
+    </p>
+    <div class="slide-media"><img src="images/08-fund-flow-panel.png"></div>
+  </section>
+
+  <!-- Fund flow PDF -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Fund Flow Document</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">A real Sources &amp; Uses ledger — <span>balanced by construction</span>.</h2>
+    <p class="slide-desc">
+      Every fee gets its own labeled section, naming the actual payee — not one lump figure.
+      Net proceeds to the borrower is derived from the other fees, so Sources always equals
+      Uses, not by coincidence.
+    </p>
+    <div class="slide-media"><img src="images/09-fund-flow-pdf-page1.png"></div>
+  </section>
+
+  <!-- Remittance readiness -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Remittance Readiness</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Funds move only once <span>a Checker has cleared them</span>.</h2>
+    <p class="slide-desc">
+      Each party reads Ready only when its standing instruction is Checker-validated <b>and</b>
+      confirmed present in the settlement document — per party, not deal-wide. One lender clearing
+      never unblocks another.
+    </p>
+    <div class="slide-media"><img src="images/13-remittances.png"></div>
+  </section>
+
+  <!-- Ops Manager oversight -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Ops Manager Oversight</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Every open approval, <span>across every deal</span> — oldest first.</h2>
+    <p class="slide-desc">
+      A single view for the Ops Manager: every standing instruction still awaiting review,
+      who's supposed to be acting on it, and how long it's been waiting. Rows turn orange past
+      4 hours, red past 8 — nothing stalls quietly.
+    </p>
+    <div class="slide-media"><img src="images/12-pending-approvals.png"></div>
+  </section>
+
+  <!-- To-do banner -->
+  <section class="slide">
+    <div class="slide-header">
+      <div class="slide-eyebrow">Personal To-Dos</div>
+      <div class="slide-number"></div>
+    </div>
+    <h2 class="slide-title">Log in, and <span>know exactly</span> what needs you.</h2>
+    <p class="slide-desc">
+      A Checker's own pending reviews surface the moment they log in — broken down per deal,
+      one click into exactly where the work is.
+    </p>
+    <div class="slide-media"><img src="images/10-todo-banner.png"></div>
+  </section>
+
+  <!-- Closing -->
+  <section class="slide closing-slide">
+    <div class="slide-eyebrow" style="color:#93c5fd;">What's Next</div>
+    <h1 class="slide-title">Built so a mistake<br>never gets the chance.</h1>
+    <p class="slide-desc">
+      dealops is deployed and demoable today — every capability in this deck is running against
+      real data, not mockups.
+    </p>
+    <div class="roadmap-tags">
+      <span>Signal Board (FR-11)</span>
+      <span>AI discrepancy detection (FR-12)</span>
+      <span>Remittance execution (FR-14)</span>
+      <span>Multi-product checkpoints</span>
+    </div>
+    <p style="margin-top:2.5rem; color:#93c5fd; font-size:0.95rem; letter-spacing:0.02em;">
+      Live demo — 34.56.167.199.sslip.io
+    </p>
+  </section>
+
+</div>
+
+<script>
+  document.querySelectorAll('.slide-number').forEach(function (el, i) {
+    el.textContent = String(i + 1).padStart(2, '0');
+  });
+</script>

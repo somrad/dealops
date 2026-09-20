@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
-import { FaPaperPlane, FaBuilding, FaIndustry, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaDownload, FaComments, FaFlag, FaRobot, FaUserTie, FaUniversity, FaUsers, FaEye, FaArrowLeft, FaCheckCircle, FaHighlighter, FaExchangeAlt, FaEllipsisV, FaTrashAlt, FaShare, FaSitemap, FaHandHoldingUsd, FaFileInvoiceDollar, FaClipboardCheck } from "react-icons/fa";
+import { FaPaperPlane, FaBuilding, FaIndustry, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaCloudDownloadAlt, FaDownload, FaComments, FaFlag, FaRobot, FaUserTie, FaUniversity, FaUsers, FaEye, FaArrowLeft, FaCheckCircle, FaHighlighter, FaExchangeAlt, FaEllipsisV, FaTrashAlt, FaShare, FaSitemap, FaHandHoldingUsd, FaFileInvoiceDollar, FaClipboardCheck, FaChevronRight, FaChevronDown, FaDatabase } from "react-icons/fa";
 import { GiPoliceOfficerHead } from "react-icons/gi";
 import {
   getDeal,
@@ -23,6 +23,9 @@ import {
   getFundingDocument,
   generateFundingDocument,
   uploadFundingDocument,
+  listGcsImportFiles,
+  importGcsFile,
+  fetchGcsPreviewBlob,
 } from "../api";
 import Avatar from "../components/Avatar";
 import AccordionItem from "../components/AccordionItem";
@@ -66,12 +69,13 @@ const ROLE_LABELS = {
 // working folder, and rendered as its own separate, muted section instead.
 const FOLDER_CATEGORIES = ["Borrower", "Lenders", "Credit Verification", "Funding Docs", "3rd Party Providers", "Unfiled"];
 
-function formatTime(isoString) {
-  return new Date(isoString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
+// Every timestamp here is part of a financial approval's audit trail (who
+// submitted/validated a Standing Instruction, when) — a bare time-of-day or
+// a date without a year is genuinely ambiguous once read back out of
+// context, so every display always carries the full date, year included.
 function formatDateTime(isoString) {
   return new Date(isoString).toLocaleString([], {
+    year: "numeric",
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -161,6 +165,17 @@ function DealRoomPage({ user, onLogout }) {
   const [validateInput, setValidateInput] = useState("");
   const [validating, setValidating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [showGcsModal, setShowGcsModal] = useState(false);
+  // Tree state: which "folder" prefixes are expanded, each expanded
+  // prefix's own {folders, files} once fetched (cached so re-collapsing
+  // and re-expanding doesn't re-fetch), and which prefixes are mid-fetch.
+  const [gcsExpanded, setGcsExpanded] = useState(new Set());
+  const [gcsChildren, setGcsChildren] = useState({});
+  const [gcsLoadingPrefixes, setGcsLoadingPrefixes] = useState(new Set());
+  const [gcsSelectedFile, setGcsSelectedFile] = useState(null);
+  const [gcsPreviewUrl, setGcsPreviewUrl] = useState(null);
+  const [gcsPreviewLoading, setGcsPreviewLoading] = useState(false);
+  const [gcsImporting, setGcsImporting] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -258,6 +273,137 @@ function DealRoomPage({ user, onLogout }) {
     noClick: true,
     noKeyboard: true,
   });
+
+  // Office-laptop workaround: no local file to pick, so browse a GCS bucket
+  // instead and import server-side — same end result as onDrop above
+  // (a Document appears, extraction runs), just a different source for the
+  // bytes. See gcs_import.py / the /gcs-import routes for the backend side.
+  function openGcsModal() {
+    setShowGcsModal(true);
+    setGcsExpanded(new Set([""]));
+    setGcsChildren({});
+    setGcsSelectedFile(null);
+    fetchGcsChildren("");
+  }
+
+  function fetchGcsChildren(prefix) {
+    setGcsLoadingPrefixes((prev) => new Set(prev).add(prefix));
+    listGcsImportFiles(dealId, prefix)
+      .then((listing) => setGcsChildren((prev) => ({ ...prev, [prefix]: listing })))
+      .catch((err) => alert(err.message))
+      .finally(() => setGcsLoadingPrefixes((prev) => {
+        const next = new Set(prev);
+        next.delete(prefix);
+        return next;
+      }));
+  }
+
+  // Real expand/collapse tree, not a single-level browser — a folder's
+  // children are fetched once and cached in gcsChildren, so collapsing and
+  // re-expanding it (or having several branches open at once, like the
+  // founder's reference screenshot) doesn't mean re-fetching every time.
+  function toggleGcsFolder(prefix) {
+    setGcsExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(prefix)) {
+        next.delete(prefix);
+      } else {
+        next.add(prefix);
+        if (!gcsChildren[prefix]) fetchGcsChildren(prefix);
+      }
+      return next;
+    });
+  }
+
+  async function handleGcsFileClick(file) {
+    setGcsSelectedFile(file);
+    setGcsPreviewLoading(true);
+    try {
+      const blob = await fetchGcsPreviewBlob(dealId, file.name);
+      setGcsPreviewUrl(URL.createObjectURL(blob));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setGcsPreviewLoading(false);
+    }
+  }
+
+  async function handleGcsImport() {
+    if (!gcsSelectedFile) return;
+    setGcsImporting(true);
+    try {
+      await importGcsFile(dealId, gcsSelectedFile.name);
+      refresh();
+      setShowGcsModal(false);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setGcsImporting(false);
+    }
+  }
+
+  // A leaf's own name, stripped of every ancestor folder's prefix — "riverside/legal/x.pdf" -> "x.pdf".
+  function gcsLeafName(fullName) {
+    const idx = fullName.lastIndexOf("/", fullName.length - 2);
+    return fullName.slice(idx + 1);
+  }
+
+  // Plain recursive render helpers, not separate components — nothing here
+  // needs its own hooks, and keeping them as functions called directly from
+  // JSX keeps the expand/collapse state in one place (this component).
+  function renderGcsFolder(prefix, depth, label) {
+    const isExpanded = gcsExpanded.has(prefix);
+    const isLoading = gcsLoadingPrefixes.has(prefix);
+    const listing = gcsChildren[prefix];
+    return (
+      <div key={prefix}>
+        <div
+          className="gcs-tree-row"
+          style={{ paddingLeft: `${depth * 1.15}rem` }}
+          onClick={() => toggleGcsFolder(prefix)}
+        >
+          <span className="gcs-tree-chevron">{isExpanded ? <FaChevronDown /> : <FaChevronRight />}</span>
+          <FaFolder />
+          <span className="gcs-tree-label">{label}</span>
+        </div>
+        {isExpanded && (
+          isLoading || !listing ? (
+            <div className="gcs-tree-row muted small" style={{ paddingLeft: `${(depth + 1) * 1.15 + 1.1}rem` }}>Loading...</div>
+          ) : listing.folders.length === 0 && listing.files.length === 0 ? (
+            <div className="gcs-tree-row muted small" style={{ paddingLeft: `${(depth + 1) * 1.15 + 1.1}rem` }}>Empty</div>
+          ) : (
+            <>
+              {listing.folders.map((f) => renderGcsFolder(f, depth + 1, gcsLeafName(f).replace(/\/$/, "")))}
+              {listing.files.map((f) => renderGcsFile(f, depth + 1))}
+            </>
+          )
+        )}
+      </div>
+    );
+  }
+
+  function renderGcsFile(file, depth) {
+    return (
+      <div
+        key={file.name}
+        className={`gcs-tree-row gcs-tree-file ${gcsSelectedFile?.name === file.name ? "selected" : ""}`}
+        style={{ paddingLeft: `${depth * 1.15 + 1.1}rem` }}
+        onClick={() => handleGcsFileClick(file)}
+      >
+        <FaFileAlt />
+        <span className="gcs-tree-label">{gcsLeafName(file.name)}</span>
+        <span className="muted small">{Math.round((file.size_bytes || 0) / 1024)} KB</span>
+      </div>
+    );
+  }
+
+  // Same leak-prevention reasoning as the main document preview's blob URL
+  // (below) — a separate effect because this is a separate piece of state.
+  useEffect(() => {
+    return () => {
+      if (gcsPreviewUrl) URL.revokeObjectURL(gcsPreviewUrl);
+    };
+  }, [gcsPreviewUrl]);
 
   // Revoke the previous blob URL whenever a new one replaces it, or on
   // unmount — otherwise each preview leaks memory the browser never frees.
@@ -951,6 +1097,9 @@ function DealRoomPage({ user, onLogout }) {
               <button type="button" className="btn-ghost" onClick={open} title="Upload documents" disabled={uploading}>
                 <FaUpload />
               </button>
+              <button type="button" className="btn-ghost" onClick={openGcsModal} title="Import from Google Cloud Storage">
+                <FaCloudDownloadAlt />
+              </button>
             </div>
           </div>
           {uploading && <p className="muted small">Uploading...</p>}
@@ -1283,7 +1432,7 @@ function DealRoomPage({ user, onLogout }) {
                   </div>
                   <div className="sidebar-row">
                     <span>Submitted</span>
-                    <strong>{formatTime(detailSsi.submitted_at)}</strong>
+                    <strong>{formatDateTime(detailSsi.submitted_at)}</strong>
                   </div>
                   {detailSsi.validated_by && (
                     <div className="sidebar-row">
@@ -1294,7 +1443,7 @@ function DealRoomPage({ user, onLogout }) {
                   {detailSsi.validated_at && (
                     <div className="sidebar-row">
                       <span>Validated at</span>
-                      <strong>{formatTime(detailSsi.validated_at)}</strong>
+                      <strong>{formatDateTime(detailSsi.validated_at)}</strong>
                     </div>
                   )}
 
@@ -1717,6 +1866,59 @@ function DealRoomPage({ user, onLogout }) {
               {validating ? "Checking..." : "Confirm"}
             </button>
           </form>
+        </Modal>
+      )}
+
+      {showGcsModal && (
+        <Modal title="Import from Google Cloud Storage" onClose={() => setShowGcsModal(false)} wide>
+          <p className="muted small" style={{ marginTop: 0 }}>
+            Browse the shared Cloud Storage bucket, click a file to preview it, then import
+            whichever one you want — it runs through the same classification/extraction pipeline
+            as a normal upload.
+          </p>
+          <div className="gcs-picker">
+            <div className="gcs-picker-browser">
+              <div className="gcs-picker-list">
+                <div className="gcs-tree-row gcs-tree-root" onClick={() => toggleGcsFolder("")}>
+                  <span className="gcs-tree-chevron">{gcsExpanded.has("") ? <FaChevronDown /> : <FaChevronRight />}</span>
+                  <FaDatabase />
+                  <span className="gcs-tree-label">dealops-app-import</span>
+                </div>
+                {gcsExpanded.has("") && (
+                  gcsLoadingPrefixes.has("") || !gcsChildren[""] ? (
+                    <div className="gcs-tree-row muted small" style={{ paddingLeft: "2.25rem" }}>Loading...</div>
+                  ) : gcsChildren[""].folders.length === 0 && gcsChildren[""].files.length === 0 ? (
+                    <div className="gcs-tree-row muted small" style={{ paddingLeft: "2.25rem" }}>Empty</div>
+                  ) : (
+                    <>
+                      {gcsChildren[""].folders.map((f) => renderGcsFolder(f, 1, gcsLeafName(f).replace(/\/$/, "")))}
+                      {gcsChildren[""].files.map((f) => renderGcsFile(f, 1))}
+                    </>
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="gcs-picker-preview">
+              {!gcsSelectedFile ? (
+                <div className="gcs-picker-preview-empty">Select a file on the left to preview it here.</div>
+              ) : gcsPreviewLoading ? (
+                <div className="gcs-picker-preview-empty">Loading preview...</div>
+              ) : gcsSelectedFile.name.toLowerCase().endsWith(".pdf") && gcsPreviewUrl ? (
+                <iframe src={`${gcsPreviewUrl}#zoom=page-width`} className="gcs-picker-preview-frame" title={gcsSelectedFile.name} />
+              ) : (
+                <div className="gcs-picker-preview-empty">No inline preview for this file type — import it to view it in the deal.</div>
+              )}
+              <div className="gcs-picker-import-bar">
+                <span className="small gcs-picker-selected-name" title={gcsSelectedFile?.name}>
+                  {gcsSelectedFile ? gcsSelectedFile.name : "No file selected"}
+                </span>
+                <button type="button" onClick={handleGcsImport} disabled={!gcsSelectedFile || gcsImporting}>
+                  {gcsImporting ? "Importing..." : "Import"}
+                </button>
+              </div>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

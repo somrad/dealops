@@ -1,0 +1,286 @@
+<title>Deal Map Mockup</title>
+<style>
+  :root {
+    --color-bg: #ffffff;
+    --color-surface: #f9fafb;
+    --color-border: #cbd5e1;
+    --color-text: #111827;
+    --color-text-muted: #6b7280;
+    --color-primary: #2563eb;
+    --color-primary-light: #eff6ff;
+    --color-green: #16a34a;
+    --color-green-light: #f0fdf4;
+    --color-amber: #d97706;
+    --color-amber-light: #fef3c7;
+    --color-purple: #7c3aed;
+    --color-purple-light: #f5f3ff;
+    --radius: 10px;
+    --shadow-md: 0 4px 12px rgba(17, 24, 39, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: #eef1f5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color: var(--color-text);
+    padding: 2.5rem 1.5rem 4rem;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  .header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 1.5rem;
+    gap: 1.5rem;
+  }
+
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+    margin-bottom: 0.4rem;
+  }
+
+  .eyebrow::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-primary);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 1.7rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+
+  .subtitle {
+    margin: 0.3rem 0 0;
+    color: var(--color-text-muted);
+    font-size: 0.95rem;
+  }
+
+  .draft-badge {
+    background: var(--color-amber-light);
+    color: var(--color-amber);
+    border: 1px solid #fde68a;
+    border-radius: 999px;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .card {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: 1.75rem;
+  }
+
+  .diagram-scroll { overflow-x: auto; }
+
+  svg { display: block; min-width: 1100px; }
+
+  .node-label {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    fill: white;
+  }
+
+  .node-sub {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 11.5px;
+    fill: rgba(255, 255, 255, 0.85);
+  }
+
+  .edge-label {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--color-text);
+  }
+
+  .edge-label-muted {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 10.5px;
+    fill: var(--color-text-muted);
+  }
+
+  .hub-title { font-size: 15px; font-weight: 800; fill: white; }
+  .hub-sub { font-size: 11.5px; fill: rgba(255,255,255,0.8); }
+  .hub-amount { font-size: 22px; font-weight: 800; fill: white; }
+
+  .legend {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--color-surface);
+    flex-wrap: wrap;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.82rem;
+    color: var(--color-text-muted);
+  }
+
+  .legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .notes {
+    margin-top: 1.5rem;
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    font-size: 0.88rem;
+    color: var(--color-text-muted);
+    line-height: 1.6;
+  }
+
+  .notes b { color: var(--color-text); }
+
+  .notes ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+  .notes li { margin-bottom: 0.3rem; }
+</style>
+
+<div class="wrap">
+
+  <div class="header">
+    <div>
+      <div class="eyebrow">Deal Map — Fund Flow (draft)</div>
+      <h1>LFP Batteries Inc</h1>
+      <p class="subtitle">CL-2026-0200 · Commercial Loan · every dollar figure pulled from the real generated Fund Flow Document</p>
+    </div>
+    <div class="draft-badge">MOCKUP — not wired to code yet</div>
+  </div>
+
+  <div class="card">
+    <div class="diagram-scroll">
+      <svg viewBox="0 0 1160 620" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"></path>
+          </marker>
+        </defs>
+
+        <!-- ===== connectors (drawn first, under the nodes) ===== -->
+        <!-- sources -> hub -->
+        <path d="M 210,130 C 320,130 320,290 430,300" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"></path>
+        <path d="M 210,340 C 320,340 320,330 430,325" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"></path>
+
+        <!-- hub -> uses -->
+        <path d="M 730,290 C 830,250 830,90 930,80" fill="none" stroke="#94a3b8" stroke-width="2.5" marker-end="url(#arrow)"></path>
+        <path d="M 730,315 C 830,315 830,300 930,290" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"></path>
+        <path d="M 730,340 C 830,380 830,470 930,490" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"></path>
+
+        <!-- edge labels -->
+        <text x="270" y="180" class="edge-label" text-anchor="middle">USD 4,000,000</text>
+        <text x="270" y="197" class="edge-label-muted" text-anchor="middle">50% pro-rata (even split)</text>
+
+        <text x="270" y="365" class="edge-label" text-anchor="middle">USD 4,000,000</text>
+        <text x="270" y="382" class="edge-label-muted" text-anchor="middle">50% pro-rata (even split)</text>
+
+        <text x="830" y="150" class="edge-label" text-anchor="middle">USD 7,807,680</text>
+        <text x="830" y="167" class="edge-label-muted" text-anchor="middle">Net proceeds to borrower</text>
+
+        <text x="830" y="285" class="edge-label" text-anchor="middle">USD 147,320</text>
+        <text x="830" y="302" class="edge-label-muted" text-anchor="middle">Fees &amp; interest to lenders</text>
+
+        <text x="830" y="430" class="edge-label" text-anchor="middle">USD 45,000</text>
+        <text x="830" y="447" class="edge-label-muted" text-anchor="middle">Legal &amp; professional fees</text>
+
+        <!-- ===== nodes ===== -->
+
+        <!-- Source: Pacific Crest -->
+        <rect x="30" y="95" width="180" height="68" rx="10" fill="var(--color-primary)"></rect>
+        <text x="120" y="122" text-anchor="middle" class="node-label">Pacific Crest</text>
+        <text x="120" y="138" text-anchor="middle" class="node-label">Capital Partners</text>
+        <text x="120" y="154" text-anchor="middle" class="node-sub">Lead Lender</text>
+
+        <!-- Source: Cascade -->
+        <rect x="30" y="306" width="180" height="68" rx="10" fill="var(--color-primary)"></rect>
+        <text x="120" y="333" text-anchor="middle" class="node-label">Cascade Industrial</text>
+        <text x="120" y="349" text-anchor="middle" class="node-label">Lending Group</text>
+        <text x="120" y="365" text-anchor="middle" class="node-sub">Lender</text>
+
+        <!-- Hub -->
+        <rect x="430" y="245" width="300" height="130" rx="14" fill="#0f172a"></rect>
+        <text x="580" y="285" text-anchor="middle" class="hub-title">LFP Batteries Inc</text>
+        <text x="580" y="305" text-anchor="middle" class="hub-sub">Commercial Loan Facility · 7.10% p.a.</text>
+        <text x="580" y="345" text-anchor="middle" class="hub-amount">USD 8,000,000</text>
+        <text x="580" y="363" text-anchor="middle" class="hub-sub">Sources = Uses · balanced</text>
+
+        <!-- Use: Borrower -->
+        <rect x="930" y="45" width="200" height="70" rx="10" fill="var(--color-green)"></rect>
+        <text x="1030" y="72" text-anchor="middle" class="node-label">LFP Batteries Inc</text>
+        <text x="1030" y="88" text-anchor="middle" class="node-sub">Borrower</text>
+        <text x="1030" y="104" text-anchor="middle" class="node-sub">Sierra Trust Bank ····7612</text>
+
+        <!-- Use: Fees & Interest cluster -->
+        <rect x="930" y="255" width="200" height="150" rx="10" fill="var(--color-amber)"></rect>
+        <text x="1030" y="280" text-anchor="middle" class="node-label">Lender Fees &amp; Interest</text>
+        <text x="1030" y="300" text-anchor="middle" class="node-sub">Upfront Fee (Pacific Crest)</text>
+        <text x="1030" y="313" text-anchor="middle" class="node-sub">USD 80,000</text>
+        <text x="1030" y="331" text-anchor="middle" class="node-sub">Interest (Pacific Crest)</text>
+        <text x="1030" y="344" text-anchor="middle" class="node-sub">USD 23,660</text>
+        <text x="1030" y="362" text-anchor="middle" class="node-sub">Interest (Cascade)</text>
+        <text x="1030" y="375" text-anchor="middle" class="node-sub">USD 23,660</text>
+        <text x="1030" y="393" text-anchor="middle" class="node-sub">Lead Agent Fee — USD 20,000</text>
+
+        <!-- Use: Legal -->
+        <rect x="930" y="455" width="200" height="70" rx="10" fill="var(--color-purple)"></rect>
+        <text x="1030" y="482" text-anchor="middle" class="node-label">Hartwell &amp; Boyd LLP</text>
+        <text x="1030" y="498" text-anchor="middle" class="node-sub">3rd Party — Legal Counsel</text>
+        <text x="1030" y="514" text-anchor="middle" class="node-sub">Evergreen Pacific Bank ····7452</text>
+
+      </svg>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--color-primary)"></span>Lender (source)</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:#0f172a"></span>Loan facility (hub)</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--color-green)"></span>Borrower (use)</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--color-amber)"></span>Fees to lenders (use)</div>
+      <div class="legend-item"><span class="legend-swatch" style="background:var(--color-purple)"></span>3rd party provider (use)</div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <b>Where every number came from:</b> this isn't illustrative — it's the real output of generating LFP Batteries Inc's Fund Flow Document
+    (loan amount $8,000,000, interest 7.10%, upfront fee $80,000, legal fee $45,000, interest $47,320, lead agent fee $20,000), pulled straight
+    from the same <code>funding_document.py</code> calculation that already produces the Sources &amp; Uses ledger. This diagram is a different
+    <i>view</i> of that exact same data, not a new calculation.
+    <ul>
+      <li><b>If we build this:</b> it'd live as a new tab/rail icon alongside the existing "Deal Map" panel and "Generate Fund Flow Document" panel — reusing <code>_build_statement()</code>'s output directly rather than recomputing anything.</li>
+      <li><b>Open question:</b> should this render only once a Fund Flow Document has actually been generated (like this mockup), or show a lighter "not generated yet" version earlier in a deal's life, sourced straight from Standing Instructions the way the existing text Deal Map already is?</li>
+      <li><b>Open question:</b> multiple lenders splitting pro-rata is shown here as an even split (the app's current known limitation, same caveat as the PDF itself) — worth fixing alongside this, or keep it a separate task?</li>
+    </ul>
+  </div>
+
+</div>

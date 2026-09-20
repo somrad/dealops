@@ -118,8 +118,13 @@ function DealSections({ deal, productLabel }) {
   );
 }
 
+// This feeds the FR-15 approvals table's "Pending since" column — real
+// financial-approval timestamps, so the year is never dropped even though
+// it's the common case (nothing here should read as ambiguous months from
+// now, out of the context of "today").
 function formatDateTime(isoString) {
   return new Date(isoString).toLocaleString(undefined, {
+    year: "numeric",
     month: "short",
     day: "numeric",
     hour: "numeric",

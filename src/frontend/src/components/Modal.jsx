@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { FaTimes } from "react-icons/fa";
 
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, wide }) {
   // Offset from the default centered position — dragged via the header,
   // reset naturally every time since a new Modal instance mounts each open.
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -32,7 +32,7 @@ function Modal({ title, onClose, children }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="modal"
+        className={`modal ${wide ? "modal-wide" : ""}`}
         style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
         onClick={(e) => e.stopPropagation()}
       >

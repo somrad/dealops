@@ -90,6 +90,21 @@ class DocumentMoveRequest(BaseModel):
     folder: str
 
 
+class GcsFileOut(BaseModel):
+    name: str
+    size_bytes: Optional[int] = None
+    updated: Optional[datetime] = None
+
+
+class GcsListingOut(BaseModel):
+    folders: List[str] = []
+    files: List[GcsFileOut] = []
+
+
+class GcsImportRequest(BaseModel):
+    object_name: str
+
+
 class FundingDocumentGenerateRequest(BaseModel):
     loan_amount: float
     interest_rate: float

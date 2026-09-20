@@ -2,19 +2,20 @@ import os
 import re
 import uuid
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Document, Message, StandingInstruction, User
-from schemas import DocumentOut, DocumentCompareOut, DocumentMoveRequest
+from schemas import DocumentOut, DocumentCompareOut, DocumentMoveRequest, GcsFileOut, GcsListingOut, GcsImportRequest
 from security import get_current_user
 from routes.deals import require_deal_membership, get_or_create_deal_agent, get_fallback_ssi_assignee
 from activity import log_activity
 from document_diff import extract_text_for_diff, build_diff_rows
 import ai_client
 import mock_loan_iq
+import gcs_import
 
 router = APIRouter()
 
@@ -131,6 +132,89 @@ def cancel_superseded_standing_instructions(db: Session, deal_id: int, old_docum
         db.commit()
 
 
+def ingest_document(db: Session, deal_id: int, filename: str, content: bytes, content_type: str, current_user: User, agent: User) -> Document:
+    # Shared by every entry point that gets a document's bytes into a deal —
+    # the multipart upload route below, and the GCS import route. Save,
+    # classify, version-link, log, extract: identical treatment regardless
+    # of where the bytes came from.
+    folder_path = deal_storage_path(deal_id)
+    extension = os.path.splitext(filename)[1]
+    stored_filename = f"{uuid.uuid4().hex}{extension}"
+    stored_path = os.path.join(folder_path, stored_filename)
+
+    with open(stored_path, "wb") as f:
+        f.write(content)
+
+    classification = ai_client.classify_document(filename, content, content_type)
+    folder = classification["folder"]
+    if classification["model_name"]:
+        log_activity(
+            db, deal_id, "llm_call",
+            f"LLM classification call on {filename} (model: {classification['model_provider']}/{classification['model_name']}) — filed under {folder}.",
+            actor_id=agent.id,
+        )
+
+    # FR-6: does this filename (version suffix stripped) match an
+    # existing document already in this folder that nothing has
+    # superseded yet? If so, this upload is a new version of it, not a
+    # separate document — link the chain rather than filing it standalone.
+    key = normalize_version_key(filename)
+    previous_head = None
+    for candidate in db.query(Document).filter(Document.deal_id == deal_id, Document.folder == folder).all():
+        if normalize_version_key(candidate.original_filename) != key:
+            continue
+        already_superseded = db.query(Document).filter(Document.supersedes_id == candidate.id).first()
+        if already_superseded is None:
+            previous_head = candidate
+            break
+
+    document = Document(
+        deal_id=deal_id,
+        uploaded_by_id=current_user.id,
+        original_filename=filename,
+        stored_filename=stored_filename,
+        folder=folder,
+        content_type=content_type,
+        size_bytes=len(content),
+        supersedes_id=previous_head.id if previous_head else None,
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+
+    # Two log entries: the human action (uploading), then the agent's
+    # automated classification result — same pattern as the mention flow.
+    db.add(Message(deal_id=deal_id, user_id=current_user.id, text=f"Uploaded {filename}"))
+    db.commit()
+    if previous_head is not None:
+        db.add(Message(
+            deal_id=deal_id, user_id=agent.id,
+            text=f'"{filename}" is a new version of "{previous_head.original_filename}" — filed under {folder}, superseding it.',
+            level="info",
+        ))
+    else:
+        db.add(Message(deal_id=deal_id, user_id=agent.id, text=f'Filed "{filename}" under {folder}.', level="info"))
+    db.commit()
+
+    # FR-5: try extraction on every upload, not just Borrower/Lenders —
+    # simpler than special-casing by folder, and documents with no
+    # payment details just come back with an empty party list.
+    parties = run_extraction_pipeline(db, deal_id, document, content, content_type, agent)
+
+    # A new version can correct exactly what a pending SSI was extracted
+    # from (the v1/v2 lender fixture is the real case — a corrected
+    # account number) — leaving the old, now-stale SSI sitting as
+    # "Pending Review" risks a Checker blind-confirming a superseded
+    # value. Only pending ones are touched: a Checker's already-recorded
+    # validate/reject decision is a real outcome, not something a later
+    # upload should silently erase.
+    if previous_head is not None:
+        for party in parties:
+            cancel_superseded_standing_instructions(db, deal_id, previous_head.id, party.get("account_holder_name"), agent)
+
+    return document
+
+
 @router.post("/deals/{deal_id}/documents", response_model=List[DocumentOut])
 def upload_documents(
     deal_id: int,
@@ -140,87 +224,63 @@ def upload_documents(
 ):
     deal = require_deal_membership(deal_id, current_user, db)
     agent = get_or_create_deal_agent(deal, db)
-    folder_path = deal_storage_path(deal_id)
 
     uploaded = []
     for upload in files:
-        extension = os.path.splitext(upload.filename)[1]
-        stored_filename = f"{uuid.uuid4().hex}{extension}"
-        stored_path = os.path.join(folder_path, stored_filename)
-
         content = upload.file.read()
-        with open(stored_path, "wb") as f:
-            f.write(content)
-
-        classification = ai_client.classify_document(upload.filename, content, upload.content_type)
-        folder = classification["folder"]
-        if classification["model_name"]:
-            log_activity(
-                db, deal_id, "llm_call",
-                f"LLM classification call on {upload.filename} (model: {classification['model_provider']}/{classification['model_name']}) — filed under {folder}.",
-                actor_id=agent.id,
-            )
-
-        # FR-6: does this filename (version suffix stripped) match an
-        # existing document already in this folder that nothing has
-        # superseded yet? If so, this upload is a new version of it, not a
-        # separate document — link the chain rather than filing it standalone.
-        key = normalize_version_key(upload.filename)
-        previous_head = None
-        for candidate in db.query(Document).filter(Document.deal_id == deal_id, Document.folder == folder).all():
-            if normalize_version_key(candidate.original_filename) != key:
-                continue
-            already_superseded = db.query(Document).filter(Document.supersedes_id == candidate.id).first()
-            if already_superseded is None:
-                previous_head = candidate
-                break
-
-        document = Document(
-            deal_id=deal_id,
-            uploaded_by_id=current_user.id,
-            original_filename=upload.filename,
-            stored_filename=stored_filename,
-            folder=folder,
-            content_type=upload.content_type,
-            size_bytes=len(content),
-            supersedes_id=previous_head.id if previous_head else None,
-        )
-        db.add(document)
-        db.commit()
-        db.refresh(document)
+        document = ingest_document(db, deal_id, upload.filename, content, upload.content_type, current_user, agent)
         uploaded.append(document)
 
-        # Two log entries: the human action (uploading), then the agent's
-        # automated classification result — same pattern as the mention flow.
-        db.add(Message(deal_id=deal_id, user_id=current_user.id, text=f"Uploaded {upload.filename}"))
-        db.commit()
-        if previous_head is not None:
-            db.add(Message(
-                deal_id=deal_id, user_id=agent.id,
-                text=f'"{upload.filename}" is a new version of "{previous_head.original_filename}" — filed under {folder}, superseding it.',
-                level="info",
-            ))
-        else:
-            db.add(Message(deal_id=deal_id, user_id=agent.id, text=f'Filed "{upload.filename}" under {folder}.', level="info"))
-        db.commit()
-
-        # FR-5: try extraction on every upload, not just Borrower/Lenders —
-        # simpler than special-casing by folder, and documents with no
-        # payment details just come back with an empty party list.
-        parties = run_extraction_pipeline(db, deal_id, document, content, upload.content_type, agent)
-
-        # A new version can correct exactly what a pending SSI was extracted
-        # from (the v1/v2 lender fixture is the real case — a corrected
-        # account number) — leaving the old, now-stale SSI sitting as
-        # "Pending Review" risks a Checker blind-confirming a superseded
-        # value. Only pending ones are touched: a Checker's already-recorded
-        # validate/reject decision is a real outcome, not something a later
-        # upload should silently erase.
-        if previous_head is not None:
-            for party in parties:
-                cancel_superseded_standing_instructions(db, deal_id, previous_head.id, party.get("account_holder_name"), agent)
-
     return uploaded
+
+
+@router.get("/deals/{deal_id}/gcs-import/list", response_model=GcsListingOut)
+def list_gcs_import_files(
+    deal_id: int,
+    prefix: str = "",
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # The office-laptop workaround: files staged in a GCS bucket from
+    # wherever the founder actually has local file access, browsed and
+    # imported here without the browser's local file APIs ever being
+    # involved. Membership-checked like every other deal route, even though
+    # the bucket itself isn't deal-specific — importing INTO a deal is.
+    # `prefix` is the current "folder" the frontend is browsing — GCS has no
+    # real folders, see gcs_import.list_bucket_entries for how this is faked.
+    require_deal_membership(deal_id, current_user, db)
+    return gcs_import.list_bucket_entries(prefix)
+
+
+@router.get("/deals/{deal_id}/gcs-import/preview")
+def preview_gcs_file(
+    deal_id: int,
+    object_name: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Lets the picker show a file before committing to importing it — same
+    # "look before you leap" reasoning as the regular document preview pane,
+    # just against the bucket instead of an already-imported Document.
+    require_deal_membership(deal_id, current_user, db)
+    content = gcs_import.download_bucket_file(object_name)
+    return Response(content=content, media_type=gcs_import.guess_content_type(object_name))
+
+
+@router.post("/deals/{deal_id}/gcs-import", response_model=DocumentOut)
+def import_gcs_file(
+    deal_id: int,
+    payload: GcsImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    deal = require_deal_membership(deal_id, current_user, db)
+    agent = get_or_create_deal_agent(deal, db)
+
+    content = gcs_import.download_bucket_file(payload.object_name)
+    filename = os.path.basename(payload.object_name)
+    content_type = gcs_import.guess_content_type(payload.object_name)
+    return ingest_document(db, deal_id, filename, content, content_type, current_user, agent)
 
 
 @router.get("/deals/{deal_id}/documents", response_model=List[DocumentOut])

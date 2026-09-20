@@ -1,4 +1,7 @@
-const API_BASE = "http://localhost:8000";
+// Local dev talks to the backend directly; a deployed build sets
+// VITE_API_BASE=/api at build time so requests go same-origin through the
+// reverse proxy instead (see the VM's Caddyfile) — no CORS involved either way.
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 function getToken() {
   return localStorage.getItem("token");
@@ -83,6 +86,32 @@ export function moveDocument(dealId, documentId, folder) {
     method: "POST",
     body: JSON.stringify({ folder }),
   });
+}
+
+// The GCS import picker — for when there's no local file to pick from at
+// all (e.g. a locked-down office laptop). Files are staged in a bucket
+// elsewhere and copied server-side into the deal, no browser file APIs used.
+export function listGcsImportFiles(dealId, prefix = "") {
+  return apiRequest(`/deals/${dealId}/gcs-import/list?prefix=${encodeURIComponent(prefix)}`);
+}
+
+export function importGcsFile(dealId, objectName) {
+  return apiRequest(`/deals/${dealId}/gcs-import`, {
+    method: "POST",
+    body: JSON.stringify({ object_name: objectName }),
+  });
+}
+
+// Preview a bucket file before importing it — same auth-header-then-blob
+// pattern as fetchDocumentBlob, just against the bucket instead of an
+// already-imported Document.
+export async function fetchGcsPreviewBlob(dealId, objectName) {
+  const token = getToken();
+  const response = await fetch(`${API_BASE}/deals/${dealId}/gcs-import/preview?object_name=${encodeURIComponent(objectName)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!response.ok) throw new Error("Could not load preview");
+  return response.blob();
 }
 
 export function compareDocuments(dealId, docAId, docBId) {
