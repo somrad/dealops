@@ -22,16 +22,20 @@ import {
   listDealActivity,
   getFundingDocument,
   generateFundingDocument,
+  getFinancialModel,
+  fillFinancialModel,
   uploadFundingDocument,
   listGcsImportFiles,
   importGcsFile,
   fetchGcsPreviewBlob,
+  getFundFlowDiagram,
 } from "../api";
 import Avatar from "../components/Avatar";
 import AccordionItem from "../components/AccordionItem";
 import Modal from "../components/Modal";
 import Brand from "../components/Brand";
 import ProfileMenu from "../components/ProfileMenu";
+import FundFlowDiagram from "../components/FundFlowDiagram";
 
 const ACTIVITY_ICONS = {
   deal_created: FaFlag,
@@ -179,6 +183,8 @@ function DealRoomPage({ user, onLogout }) {
   const [previewDoc, setPreviewDoc] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [fundFlowDiagram, setFundFlowDiagram] = useState(null);
+  const [fundFlowDiagramLoading, setFundFlowDiagramLoading] = useState(false);
   const [agentCommands, setAgentCommands] = useState([]);
   const [text, setText] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
@@ -199,9 +205,10 @@ function DealRoomPage({ user, onLogout }) {
   const [moveMenuDocId, setMoveMenuDocId] = useState(null);
   const [moving, setMoving] = useState(false);
   const [fundingDoc, setFundingDoc] = useState(null);
-  const [showGenerateForm, setShowGenerateForm] = useState(false);
-  const [generateForm, setGenerateForm] = useState({ loan_amount: "", interest_rate: "", upfront_fee: "", legal_fee: "", interest_amount: "", lead_agent_fee: "", currency: "USD" });
-  const [generatingFunding, setGeneratingFunding] = useState(false);
+  const [financialModel, setFinancialModel] = useState(null);
+  const [fillValues, setFillValues] = useState({});
+  const [savingModel, setSavingModel] = useState(false);
+  const [modelError, setModelError] = useState(null);
   const [uploadingFunding, setUploadingFunding] = useState(false);
   const chatBoxRef = useRef(null);
   const inputRef = useRef(null);
@@ -439,6 +446,7 @@ function DealRoomPage({ user, onLogout }) {
 
   async function handlePreviewClick(doc) {
     setCompareResult(null);
+    setFundFlowDiagram(null);
     setPreviewLoading(true);
     try {
       const blob = await fetchDocumentBlob(dealId, doc.id);
@@ -468,6 +476,7 @@ function DealRoomPage({ user, onLogout }) {
 
   async function runCompare() {
     if (compareSelection.length !== 2) return;
+    setFundFlowDiagram(null);
     setComparing(true);
     try {
       // Older document (by upload time) always goes on the left, newer on
@@ -522,27 +531,43 @@ function DealRoomPage({ user, onLogout }) {
 
   // FR-13: Deal-Team-only. Backend also enforces this — the button is
   // hidden for other roles below, but the real gate is server-side.
-  async function handleGenerateFunding(event) {
-    event.preventDefault();
-    setGeneratingFunding(true);
+  // Fetches the deal's CURRENT financial model — not polled every 3s with
+  // everything else, since an empty model triggers a real LLM extraction
+  // pass over every document on file (see sync_all_financial_lines_for_deal
+  // in financial_model.py) and shouldn't fire on a timer.
+  function handleOpenGenerateFundingPanel() {
+    const wasOpen = showChatPanel && rightPanelView === "generate-funding";
+    toggleRightPanel("generate-funding");
+    if (wasOpen) return;
+    setModelError(null);
+    setFillValues({});
+    getFinancialModel(dealId)
+      .then(setFinancialModel)
+      .catch((err) => alert(err.message));
+  }
+
+  // Fills in whatever the Deal Team member typed for missing amounts, then
+  // generates — one action, matching "ask only for what's missing."
+  async function handleSaveAndGenerate() {
+    setSavingModel(true);
+    setModelError(null);
     try {
-      const payload = {
-        loan_amount: parseFloat(generateForm.loan_amount) || 0,
-        interest_rate: parseFloat(generateForm.interest_rate) || 0,
-        upfront_fee: parseFloat(generateForm.upfront_fee) || 0,
-        legal_fee: parseFloat(generateForm.legal_fee) || 0,
-        interest_amount: parseFloat(generateForm.interest_amount) || 0,
-        lead_agent_fee: parseFloat(generateForm.lead_agent_fee) || 0,
-        currency: generateForm.currency || "USD",
-      };
-      const result = await generateFundingDocument(dealId, payload);
+      const fills = Object.entries(fillValues)
+        .filter(([, v]) => v !== "" && v !== undefined)
+        .map(([line_id, v]) => ({ line_id: parseInt(line_id, 10), amount: parseFloat(v) }));
+      let model = financialModel;
+      if (fills.length > 0) {
+        model = await fillFinancialModel(dealId, fills);
+        setFinancialModel(model);
+        setFillValues({});
+      }
+      const result = await generateFundingDocument(dealId);
       setFundingDoc(result);
-      setShowGenerateForm(false);
       refresh();
     } catch (err) {
-      alert(err.message);
+      setModelError(err.message);
     } finally {
-      setGeneratingFunding(false);
+      setSavingModel(false);
     }
   }
 
@@ -561,6 +586,17 @@ function DealRoomPage({ user, onLogout }) {
       setUploadingFunding(false);
     }
   }
+
+  // Reconciliation is now always computed from the deal's financial model
+  // (see build_funding_document_out) — no longer gated on a Fund Flow
+  // Document existing yet, so Remittances panels check for real party data
+  // instead of checking fundingDoc.document specifically.
+  const hasReconciliationData = !!(
+    fundingDoc &&
+    (fundingDoc.reconciliation.borrower.length ||
+      fundingDoc.reconciliation.lenders.length ||
+      fundingDoc.reconciliation.third_party.length)
+  );
 
   // FR-14's actual gating rule, made visible: "Ready" needs both — the
   // party is confirmed present in the fund flow document AND its own
@@ -805,6 +841,29 @@ function DealRoomPage({ user, onLogout }) {
     }
   }
 
+  // Deal Map now drives BOTH the existing text census (right panel) AND a
+  // visual fund-flow diagram in the center — same trigger, two views of
+  // the deal. Closes/reopens together so there's one consistent on/off
+  // state instead of two panels that could disagree.
+  function handleOpenDealMap() {
+    const wasOpen = showChatPanel && rightPanelView === "deal-map";
+    toggleRightPanel("deal-map");
+    if (wasOpen) {
+      setFundFlowDiagram(null);
+      return;
+    }
+    setCompareResult(null);
+    closePreview();
+    setFundFlowDiagramLoading(true);
+    getFundFlowDiagram(dealId)
+      .then(setFundFlowDiagram)
+      .catch((err) => {
+        alert(err.message);
+        setFundFlowDiagram(null);
+      })
+      .finally(() => setFundFlowDiagramLoading(false));
+  }
+
   const mentionSuggestions = useMemo(() => {
     if (mentionQuery === null) return [];
     const q = mentionQuery.toLowerCase();
@@ -1027,7 +1086,7 @@ function DealRoomPage({ user, onLogout }) {
           <button
             type="button"
             className={`icon-rail-btn map-rail-btn ${showChatPanel && rightPanelView === "deal-map" ? "active" : ""}`}
-            onClick={() => toggleRightPanel("deal-map")}
+            onClick={handleOpenDealMap}
             title="Deal Map"
           >
             <FaSitemap />
@@ -1036,7 +1095,7 @@ function DealRoomPage({ user, onLogout }) {
             <button
               type="button"
               className={`icon-rail-btn remit-rail-btn ${showChatPanel && rightPanelView === "generate-funding" ? "active" : ""}`}
-              onClick={() => toggleRightPanel("generate-funding")}
+              onClick={handleOpenGenerateFundingPanel}
               title="Generate Fund Flow Document"
             >
               <FaFileInvoiceDollar />
@@ -1199,6 +1258,26 @@ function DealRoomPage({ user, onLogout }) {
                   </div>
                 ))}
               </div>
+            </>
+          ) : fundFlowDiagram || fundFlowDiagramLoading ? (
+            <>
+              <div className="doc-preview-header">
+                <span className="doc-preview-title">
+                  <FaSitemap /> Deal Map — Fund Flow
+                </span>
+                <div className="doc-preview-actions">
+                  <button type="button" className="btn-ghost" onClick={() => setFundFlowDiagram(null)} title="Close">
+                    <FaTimes />
+                  </button>
+                </div>
+              </div>
+              {fundFlowDiagramLoading ? (
+                <div className="doc-preview-empty">
+                  <p className="muted">Loading...</p>
+                </div>
+              ) : (
+                <FundFlowDiagram data={fundFlowDiagram} dealTitle={deal.title} productLabel={meta.label} />
+              )}
             </>
           ) : previewLoading ? (
             <div className="doc-preview-empty">
@@ -1578,24 +1657,22 @@ function DealRoomPage({ user, onLogout }) {
               </button>
             </div>
             <div className="ssi-panel-body">
-              {!fundingDoc ? (
+              {!financialModel ? (
                 <p className="muted small">Loading...</p>
-              ) : !fundingDoc.document ? (
+              ) : !financialModel.has_lines ? (
                 <div className="funding-empty">
                   <p className="muted small">
-                    No Fund Flow / Settlement and Closing Document yet. Remittances stay
-                    blocked for every party until one exists.
+                    No financial line items yet. Upload Borrower/Lenders/3rd Party documents
+                    first — each party's amount is either extracted automatically or asked for
+                    here once uploaded.
                   </p>
-                  <button type="button" onClick={() => setShowGenerateForm(true)}>
-                    <FaFileAlt /> Generate from documents on file
-                  </button>
                   <button
                     type="button"
                     className="btn-secondary"
                     onClick={() => fundingFileInputRef.current?.click()}
                     disabled={uploadingFunding}
                   >
-                    <FaUpload /> {uploadingFunding ? "Uploading..." : "Upload settlement/closing PDF"}
+                    <FaUpload /> {uploadingFunding ? "Uploading..." : "Upload settlement/closing PDF instead"}
                   </button>
                   <input
                     ref={fundingFileInputRef}
@@ -1608,17 +1685,67 @@ function DealRoomPage({ user, onLogout }) {
               ) : (
                 <>
                   <div className="sidebar-row">
-                    <span>Fund Flow Document</span>
-                    <button type="button" className="evidence-link" onClick={() => handlePreviewClick(fundingDoc.document)}>
-                      <FaFileAlt /> {fundingDoc.document.original_filename}
-                    </button>
+                    <span>Total Sources</span>
+                    <strong>{financialModel.lines[0]?.currency || "USD"} {financialModel.total_sources.toLocaleString()}</strong>
+                  </div>
+                  <div className="sidebar-row">
+                    <span>Total Uses</span>
+                    <strong>{financialModel.lines[0]?.currency || "USD"} {financialModel.total_uses.toLocaleString()}</strong>
+                  </div>
+                  <div className="sidebar-row">
+                    <span>Status</span>
+                    <strong>
+                      {!financialModel.all_known
+                        ? `${financialModel.missing.length} amount${financialModel.missing.length === 1 ? "" : "s"} missing`
+                        : financialModel.balanced ? "Balanced" : "Out of balance"}
+                    </strong>
                   </div>
 
-                  {renderReconciliationGroups(fundingDoc.reconciliation)}
+                  <h3 style={{ marginTop: "1.25rem" }}>Sources ({financialModel.sources.length})</h3>
+                  {financialModel.sources.map((line) => (
+                    <div className="sidebar-row" key={line.id}>
+                      <span>{line.category} — {line.party_name}</span>
+                      {line.amount === null ? (
+                        <input
+                          type="number" step="0.01" placeholder="Amount" style={{ width: "130px" }}
+                          value={fillValues[line.id] ?? ""}
+                          onChange={(e) => setFillValues({ ...fillValues, [line.id]: e.target.value })}
+                        />
+                      ) : (
+                        <strong>{line.currency} {line.amount.toLocaleString()}</strong>
+                      )}
+                    </div>
+                  ))}
 
-                  <button type="button" className="btn-secondary" style={{ marginTop: "1rem" }} onClick={() => setShowGenerateForm(true)}>
-                    <FaExchangeAlt /> Regenerate
-                  </button>
+                  <h3 style={{ marginTop: "1.25rem" }}>Uses ({financialModel.uses.length})</h3>
+                  {financialModel.uses.map((line) => (
+                    <div className="sidebar-row" key={line.id}>
+                      <span>{line.category} — {line.party_name}</span>
+                      {line.role === "borrower" ? (
+                        line.amount === null ? (
+                          <span className="muted small">Pending — calculated once every other amount is known</span>
+                        ) : (
+                          <strong>{line.currency} {line.amount.toLocaleString()} <span className="muted small">(derived)</span></strong>
+                        )
+                      ) : line.amount === null ? (
+                        <input
+                          type="number" step="0.01" placeholder="Amount" style={{ width: "130px" }}
+                          value={fillValues[line.id] ?? ""}
+                          onChange={(e) => setFillValues({ ...fillValues, [line.id]: e.target.value })}
+                        />
+                      ) : (
+                        <strong>{line.currency} {line.amount.toLocaleString()}</strong>
+                      )}
+                    </div>
+                  ))}
+
+                  {modelError && <p className="muted small" style={{ marginTop: "0.75rem", color: "var(--color-red, #dc2626)" }}>{modelError}</p>}
+
+                  {user.role === "deal_team" && (
+                    <button type="button" style={{ marginTop: "1rem" }} onClick={handleSaveAndGenerate} disabled={savingModel}>
+                      <FaFileAlt /> {savingModel ? "Saving..." : "Save & Generate"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn-secondary"
@@ -1626,7 +1753,7 @@ function DealRoomPage({ user, onLogout }) {
                     onClick={() => fundingFileInputRef.current?.click()}
                     disabled={uploadingFunding}
                   >
-                    <FaUpload /> {uploadingFunding ? "Uploading..." : "Replace with upload"}
+                    <FaUpload /> {uploadingFunding ? "Uploading..." : "Replace with upload instead"}
                   </button>
                   <input
                     ref={fundingFileInputRef}
@@ -1636,6 +1763,15 @@ function DealRoomPage({ user, onLogout }) {
                     onChange={handleUploadFunding}
                   />
                 </>
+              )}
+
+              {fundingDoc?.document && (
+                <div className="sidebar-row" style={{ marginTop: "1.25rem", borderTop: "1px solid var(--color-border)", paddingTop: "0.75rem" }}>
+                  <span>Current Fund Flow Document</span>
+                  <button type="button" className="evidence-link" onClick={() => handlePreviewClick(fundingDoc.document)}>
+                    <FaFileAlt /> {fundingDoc.document.original_filename}
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1652,19 +1788,21 @@ function DealRoomPage({ user, onLogout }) {
             <div className="ssi-panel-body">
               {!fundingDoc ? (
                 <p className="muted small">Loading...</p>
-              ) : !fundingDoc.document ? (
+              ) : !hasReconciliationData ? (
                 <p className="muted small">
-                  No Fund Flow / Settlement and Closing Document yet — ask a Deal Team member
-                  to generate or upload one before any remittance can move.
+                  No financial line items on file yet — ask a Deal Team member to upload
+                  Borrower/Lenders/3rd Party documents before any remittance can move.
                 </p>
               ) : (
                 <>
-                  <div className="sidebar-row">
-                    <span>Fund Flow Document</span>
-                    <button type="button" className="evidence-link" onClick={() => handlePreviewClick(fundingDoc.document)}>
-                      <FaFileAlt /> {fundingDoc.document.original_filename}
-                    </button>
-                  </div>
+                  {fundingDoc.document && (
+                    <div className="sidebar-row">
+                      <span>Fund Flow Document</span>
+                      <button type="button" className="evidence-link" onClick={() => handlePreviewClick(fundingDoc.document)}>
+                        <FaFileAlt /> {fundingDoc.document.original_filename}
+                      </button>
+                    </div>
+                  )}
                   {renderReconciliationGroups(fundingDoc.reconciliation)}
                 </>
               )}
@@ -1683,8 +1821,8 @@ function DealRoomPage({ user, onLogout }) {
             <div className="ssi-panel-body">
               {!fundingDoc ? (
                 <p className="muted small">Loading...</p>
-              ) : !fundingDoc.document ? (
-                <p className="muted small">No Fund Flow / Settlement and Closing Document yet.</p>
+              ) : !hasReconciliationData ? (
+                <p className="muted small">No financial line items on file yet.</p>
               ) : (
                 <>
                   <p className="muted small">
@@ -1780,61 +1918,6 @@ function DealRoomPage({ user, onLogout }) {
             </div>
           </div>
         </div>
-      )}
-
-      {showGenerateForm && (
-        <Modal title="Generate Fund Flow Document" onClose={() => setShowGenerateForm(false)}>
-          <form className="modal-form" onSubmit={handleGenerateFunding}>
-            <p className="muted small">
-              Borrower, Lender, and 3rd Party Provider names are pulled automatically from
-              standing instructions already on file — just the loan economics below.
-            </p>
-            <label>Loan amount</label>
-            <input
-              type="number" step="0.01" required autoFocus
-              value={generateForm.loan_amount}
-              onChange={(e) => setGenerateForm({ ...generateForm, loan_amount: e.target.value })}
-            />
-            <label>Interest rate (% per annum)</label>
-            <input
-              type="number" step="0.001" required
-              value={generateForm.interest_rate}
-              onChange={(e) => setGenerateForm({ ...generateForm, interest_rate: e.target.value })}
-            />
-            <label>Upfront / origination fee</label>
-            <input
-              type="number" step="0.01"
-              value={generateForm.upfront_fee}
-              onChange={(e) => setGenerateForm({ ...generateForm, upfront_fee: e.target.value })}
-            />
-            <label>Legal fee</label>
-            <input
-              type="number" step="0.01"
-              value={generateForm.legal_fee}
-              onChange={(e) => setGenerateForm({ ...generateForm, legal_fee: e.target.value })}
-            />
-            <label>Prepaid interest</label>
-            <input
-              type="number" step="0.01"
-              value={generateForm.interest_amount}
-              onChange={(e) => setGenerateForm({ ...generateForm, interest_amount: e.target.value })}
-            />
-            <label>Lead agent fee</label>
-            <input
-              type="number" step="0.01"
-              value={generateForm.lead_agent_fee}
-              onChange={(e) => setGenerateForm({ ...generateForm, lead_agent_fee: e.target.value })}
-            />
-            <label>Currency</label>
-            <input
-              value={generateForm.currency}
-              onChange={(e) => setGenerateForm({ ...generateForm, currency: e.target.value })}
-            />
-            <button type="submit" disabled={generatingFunding}>
-              {generatingFunding ? "Generating..." : "Generate"}
-            </button>
-          </form>
-        </Modal>
       )}
 
       {validatingSsi && (

@@ -22,6 +22,22 @@ def extract_payment_details(filename: str, content: bytes, content_type: str) ->
     return response.json()  # {"parties": [...], "model_provider": ..., "model_name": ...}
 
 
+def extract_deal_line_items(filename: str, content: bytes, content_type: str, folder: str) -> dict:
+    files = {"file": (filename, content, content_type or "application/octet-stream")}
+    response = httpx.post(
+        f"{AI_API_BASE_URL}/extract-deal-line-items", files=files, data={"folder": folder}, timeout=60
+    )
+    response.raise_for_status()
+    return response.json()  # {"items": [...], "model_provider": ..., "model_name": ...}
+
+
+def extract_fund_flow_statement(filename: str, content: bytes, content_type: str) -> dict:
+    files = {"file": (filename, content, content_type or "application/octet-stream")}
+    response = httpx.post(f"{AI_API_BASE_URL}/extract-fund-flow-statement", files=files, timeout=60)
+    response.raise_for_status()
+    return response.json()  # {"lines": [...], "model_provider": ..., "model_name": ...}
+
+
 def get_agent_commands() -> list:
     response = httpx.get(f"{AI_API_BASE_URL}/commands", timeout=10)
     response.raise_for_status()

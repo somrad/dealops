@@ -105,16 +105,6 @@ class GcsImportRequest(BaseModel):
     object_name: str
 
 
-class FundingDocumentGenerateRequest(BaseModel):
-    loan_amount: float
-    interest_rate: float
-    upfront_fee: float = 0
-    legal_fee: float = 0
-    interest_amount: float = 0
-    lead_agent_fee: float = 0
-    currency: str = "USD"
-
-
 class ReconciliationEntryOut(BaseModel):
     name: str
     status: str
@@ -130,6 +120,71 @@ class ReconciliationOut(BaseModel):
 class FundingDocumentOut(BaseModel):
     document: Optional[DocumentOut] = None
     reconciliation: ReconciliationOut
+
+
+class DiagramPartyOut(BaseModel):
+    name: str
+    category: Optional[str] = None
+    amount: float
+
+
+class DiagramFeeLineOut(BaseModel):
+    section: str
+    party: str
+    amount: float
+
+
+class DiagramLegalLineOut(BaseModel):
+    party: str
+    category: Optional[str] = None
+    amount: float
+
+
+class FundFlowDiagramOut(BaseModel):
+    has_data: bool
+    missing_count: int = 0
+    currency: Optional[str] = None
+    total_sources: Optional[float] = None
+    total_uses: Optional[float] = None
+    sources: List[DiagramPartyOut] = []
+    borrower_lines: List[DiagramPartyOut] = []
+    fee_lines: List[DiagramFeeLineOut] = []
+    legal_lines: List[DiagramLegalLineOut] = []
+
+
+class FinancialLineOut(BaseModel):
+    id: int
+    flow: str
+    role: str
+    category: str
+    party_name: str
+    amount: Optional[float] = None
+    currency: str
+    amount_source: Optional[str] = None
+    document_id: Optional[int] = None
+    document_filename: Optional[str] = None
+    standing_instruction_id: Optional[int] = None
+
+
+class DealFinancialModelOut(BaseModel):
+    lines: List[FinancialLineOut] = []
+    sources: List[FinancialLineOut] = []
+    uses: List[FinancialLineOut] = []
+    total_sources: float = 0
+    total_uses: float = 0
+    missing: List[FinancialLineOut] = []
+    all_known: bool = False
+    balanced: bool = False
+    has_lines: bool = False
+
+
+class FillFinancialLineRequest(BaseModel):
+    line_id: int
+    amount: float
+
+
+class FillFinancialLinesRequest(BaseModel):
+    fills: List[FillFinancialLineRequest]
 
 
 class DiffSegmentOut(BaseModel):

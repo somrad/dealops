@@ -17,11 +17,6 @@ router = APIRouter()
 MENTION_PATTERN = re.compile(r"@(\w+)")
 
 GENERATE_FUNDING_PATTERN = re.compile(r"^generate-funding-document(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
-FUNDING_USAGE = (
-    "/generate-funding-document <loan_amount> <interest_rate> [<upfront_fee> <legal_fee> <interest_amount> <lead_agent_fee>]\n"
-    "Example: /generate-funding-document 2000000 8.25 20000 8975 13750 5000\n"
-    "(amount, rate, upfront fee, legal fee, prepaid interest, lead agent fee)"
-)
 
 
 @router.get("/agent-commands")
@@ -88,34 +83,27 @@ def handle_generate_funding_command(deal, current_user: User, agent: User, db: S
     # so this is handled directly here — deterministic, DB-touching — the
     # same reasoning as the ops-manager-mention-grants-membership rule below,
     # not routed through ai_client/ai_api, which has no DB access to do it.
+    #
+    # No numeric args anymore — the deal's financial model (per-party
+    # amounts, extracted from documents or entered in the Generate Fund
+    # Flow Document panel) is the only input now. Chat can trigger
+    # generation once that model is complete, but filling in a dozen
+    # missing per-party amounts belongs in that dedicated UI, not chat text.
     if current_user.role != "deal_team":
         db.add(Message(deal_id=deal.id, user_id=agent.id, text="Only a Deal Team member can generate the Fund Flow Document.", level="error"))
         db.commit()
         return
 
-    parts = args_text.split()
-    if len(parts) < 2:
-        db.add(Message(deal_id=deal.id, user_id=agent.id, text=FUNDING_USAGE, level="info"))
-        db.commit()
-        return
-
-    try:
-        loan_amount = float(parts[0])
-        interest_rate = float(parts[1])
-        upfront_fee = float(parts[2]) if len(parts) > 2 else 0.0
-        legal_fee = float(parts[3]) if len(parts) > 3 else 0.0
-        interest_amount = float(parts[4]) if len(parts) > 4 else 0.0
-        lead_agent_fee = float(parts[5]) if len(parts) > 5 else 0.0
-    except ValueError:
-        db.add(Message(deal_id=deal.id, user_id=agent.id, text=f"Couldn't read those as numbers.\n{FUNDING_USAGE}", level="error"))
-        db.commit()
-        return
-
     storage_path = deal_storage_path(deal.id)
-    generate_funding_document(
-        db, deal, current_user, agent, storage_path, loan_amount, interest_rate, upfront_fee, legal_fee,
-        interest_amount=interest_amount, lead_agent_fee=lead_agent_fee,
-    )
+    try:
+        generate_funding_document(db, deal, current_user, agent, storage_path)
+    except ValueError as e:
+        db.add(Message(
+            deal_id=deal.id, user_id=agent.id,
+            text=f"{e} Open the \"Generate Fund Flow Document\" panel to review or fill in the deal's financial model.",
+            level="error",
+        ))
+        db.commit()
 
 
 @router.post("/deals/{deal_id}/messages", response_model=MessageOut)

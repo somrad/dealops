@@ -122,7 +122,7 @@ AGENT_COMMANDS = {
         # /commands (the frontend's autocomplete) still lists it with the
         # right usage; funding_document_status() below is unreachable in
         # normal use, kept only as a harmless fallback.
-        "help": "generate-funding-document <amount> <rate> [<upfront_fee> <legal_fee> <interest_amount> <lead_agent_fee>] — generate the Fund Flow Document (Deal Team only)",
+        "help": "generate-funding-document — generate the Fund Flow Document from this deal's financial model (Deal Team only; fill in missing amounts in the panel first)",
     },
 }
 

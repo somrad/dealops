@@ -122,10 +122,30 @@ export function getFundingDocument(dealId) {
   return apiRequest(`/deals/${dealId}/funding-document`);
 }
 
-export function generateFundingDocument(dealId, payload) {
-  return apiRequest(`/deals/${dealId}/funding-document/generate`, {
+// Powers the Deal Map's visual fund-flow diagram — see FR-13/13a's note on
+// why this is a reshape of the same Sources & Uses data, not a new calc.
+export function getFundFlowDiagram(dealId) {
+  return apiRequest(`/deals/${dealId}/fund-flow-diagram`);
+}
+
+export function generateFundingDocument(dealId) {
+  // No body anymore — the deal's financial model (see getFinancialModel /
+  // fillFinancialModel) is the only input now, not a form of numbers typed
+  // in fresh each time.
+  return apiRequest(`/deals/${dealId}/funding-document/generate`, { method: "POST" });
+}
+
+// The deal financial model: every line item (party/category/amount) known
+// so far, plus what's still missing. One model, shared by the diagram, the
+// generated PDF, and Remittances readiness — see funding_document.py.
+export function getFinancialModel(dealId) {
+  return apiRequest(`/deals/${dealId}/financial-model`);
+}
+
+export function fillFinancialModel(dealId, fills) {
+  return apiRequest(`/deals/${dealId}/financial-model/fill`, {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ fills }),
   });
 }
 

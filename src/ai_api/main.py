@@ -1,11 +1,14 @@
 from typing import List, Optional
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from classifier import classify_document, extract_text
 from agent_skills import AGENT_COMMANDS, handle_agent_mention
-from extractor import extract_payment_details, MODEL_NAME, MODEL_PROVIDER
+from extractor import (
+    extract_payment_details, extract_deal_line_items, extract_fund_flow_statement,
+    MODEL_NAME, MODEL_PROVIDER,
+)
 
 app = FastAPI(title="dealops ai_api")
 
@@ -35,6 +38,32 @@ async def extract_payment_details_endpoint(file: UploadFile = File(...)):
     call_made = bool(text_content.strip())
     return {
         "parties": parties,
+        "model_provider": MODEL_PROVIDER if call_made else None,
+        "model_name": MODEL_NAME if call_made else None,
+    }
+
+
+@app.post("/extract-deal-line-items")
+async def extract_deal_line_items_endpoint(file: UploadFile = File(...), folder: str = Form(...)):
+    content = await file.read()
+    text_content = extract_text(content, file.content_type, file.filename)
+    items = extract_deal_line_items(text_content, folder)
+    call_made = bool(text_content.strip())
+    return {
+        "items": items,
+        "model_provider": MODEL_PROVIDER if call_made else None,
+        "model_name": MODEL_NAME if call_made else None,
+    }
+
+
+@app.post("/extract-fund-flow-statement")
+async def extract_fund_flow_statement_endpoint(file: UploadFile = File(...)):
+    content = await file.read()
+    text_content = extract_text(content, file.content_type, file.filename)
+    lines = extract_fund_flow_statement(text_content)
+    call_made = bool(text_content.strip())
+    return {
+        "lines": lines,
         "model_provider": MODEL_PROVIDER if call_made else None,
         "model_name": MODEL_NAME if call_made else None,
     }

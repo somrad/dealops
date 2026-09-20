@@ -30,6 +30,16 @@ Deal 3: commercial_loan_lfp_batteries/
     baked in. Deal Reference matches the actual "LFP Batteries Inc" deal
     (CL-2026-0200) in the app's seed data, so it reads as authentic when
     uploaded there for a demo.
+    third_party_providers/legal_advisory_fee_statement_hartwell_boyd.pdf
+    — a legal advisory fee statement genuinely written for this deal
+    (Matter: LFP Batteries Inc, Loan Reference: CL-2026-0200), USD
+    1,083,000 across 4 fee categories (Advisory Fees / Due Diligence
+    Coordination / Filing and Recording / Courier). Supersedes an earlier
+    same-named file that had wrongly carried Riverside Logistics Loan's
+    own header fields (Matter/Loan Reference) despite being uploaded to
+    this deal for testing — caught when the founder asked where a
+    $45,000 figure in LFP's financial model actually came from (it
+    didn't come from any real document at all; see CLAUDE.md).
 
 Deal 4: commercial_loan_riverside_logistics/
   - A full document set for "Riverside Logistics Loan" (Deal Reference

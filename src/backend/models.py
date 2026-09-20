@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float
 from sqlalchemy.orm import relationship
 
 from database import Base
@@ -33,6 +33,11 @@ class Deal(Base):
     # and Closing Document for this deal — set by generating or uploading
     # one (routes/funding_document.py), never inferred from filename/folder.
     fund_flow_document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    # The 7 generation-input columns that used to live here (loan amount,
+    # interest rate, upfront/legal/interest/lead-agent fee, currency) were
+    # replaced by the DealFinancialLine table — one row per real party/
+    # amount, extracted from documents or entered manually, instead of a
+    # single set of numbers typed once into a form. See financial_model.py.
 
     created_by = relationship("User", foreign_keys=[created_by_id])
 
@@ -111,6 +116,40 @@ class StandingInstruction(Base):
     document = relationship("Document")
     validated_by = relationship("User", foreign_keys=[validated_by_id])
     assigned_checker = relationship("User", foreign_keys=[assigned_checker_id])
+
+
+class DealFinancialLine(Base):
+    __tablename__ = "deal_financial_lines"
+
+    id = Column(Integer, primary_key=True)
+    deal_id = Column(Integer, ForeignKey("deals.id"), nullable=False)
+    # "source" = money coming into the deal (a lender's contribution).
+    # "use" = money going out (to the borrower, a 3rd party, or a fee payee).
+    flow = Column(String, nullable=False)
+    role = Column(String, nullable=False)  # borrower, lender, third_party, other
+    # Free text, not an enum — "Principal", "Advisory Fee", "Upfront Fee", ...
+    # so a new product type (subscription/fund/equipment finance) never needs
+    # a schema change to introduce a category this app hasn't seen yet.
+    category = Column(String, nullable=False)
+    party_name = Column(String, nullable=False)
+    # Null = not yet known. Surfaced to the Deal Team as a field to fill in —
+    # NEVER silently derived (e.g. borrower proceeds as "whatever's left").
+    amount = Column(Float, nullable=True)
+    currency = Column(String, default="USD")
+    # extracted_from_document | manual_entry | uploaded_fund_flow_document —
+    # null while amount is null.
+    amount_source = Column(String, nullable=True)
+    # Evidence link, same pattern as StandingInstruction.document_id.
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    standing_instruction_id = Column(Integer, ForeignKey("standing_instructions.id"), nullable=True)
+    # Who typed a manual value, when amount_source == manual_entry.
+    entered_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    document = relationship("Document")
+    standing_instruction = relationship("StandingInstruction")
+    entered_by = relationship("User")
 
 
 class DealView(Base):

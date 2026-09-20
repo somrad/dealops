@@ -16,6 +16,7 @@ from document_diff import extract_text_for_diff, build_diff_rows
 import ai_client
 import mock_loan_iq
 import gcs_import
+import financial_model
 
 router = APIRouter()
 
@@ -61,6 +62,22 @@ def run_extraction_pipeline(db: Session, deal_id: int, document: Document, conte
             f"found {len(parties)} payment part{'y' if len(parties) == 1 else 'ies'}.",
             actor_id=agent.id,
         )
+
+    # The deal financial model (who's owed/contributing how much) is a
+    # SEPARATE extraction from the bank-detail one above — deliberately not
+    # derived from whether a StandingInstruction was created for this
+    # document. Only runs for folders that carry deal economics (see
+    # financial_model.FOLDER_ROLE); a no-op otherwise.
+    if document.folder in financial_model.FOLDER_ROLE:
+        line_result = ai_client.extract_deal_line_items(document.original_filename, content, content_type, document.folder)
+        financial_model.sync_financial_lines_for_document(db, deal_id, document, line_result["items"])
+        if line_result["model_name"]:
+            log_activity(
+                db, deal_id, "llm_call",
+                f"LLM deal-economics extraction on {document.original_filename} (model: {line_result['model_provider']}/{line_result['model_name']}) — "
+                f"found {len(line_result['items'])} financial line item(s).",
+                actor_id=agent.id,
+            )
 
     # Checked once per pipeline run, not per party — deal membership doesn't
     # change mid-loop. None means a real Checker is already on the deal.
