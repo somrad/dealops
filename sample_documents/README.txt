@@ -23,6 +23,38 @@ Deal 2: real_estate_loan_maple_street/
     (FR-12) — the system should catch that funds should NOT go to the
     Borrower here, flag it, and require a manual override.
 
+Deal 3: commercial_loan_lfp_batteries/
+  - A straightforward commercial loan for "LFP Batteries Inc" — one
+    borrower, two syndicated lenders (Pacific Crest Capital Partners,
+    Cascade Industrial Lending Group), no diffing/discrepancy scenario
+    baked in. Deal Reference matches the actual "LFP Batteries Inc" deal
+    (CL-2026-0200) in the app's seed data, so it reads as authentic when
+    uploaded there for a demo.
+
+Deal 4: commercial_loan_riverside_logistics/
+  - A full document set for "Riverside Logistics Loan" (Deal Reference
+    CL-2026-0100, matching the actual deal in the app's seed data):
+      borrower/borrower_loan_agreement.pdf — Riverside Logistics Group
+        LLC, a USD 12,000,000 facility.
+      lenders/lender_wire_instructions.pdf — two syndicated lenders,
+        Timberline Capital Partners (60%) and Anchor Point Commercial
+        Lending (40%), summing to the full facility amount.
+      third_party_providers/ — three separate fee statements, Hartwell &
+        Boyd LLP (structuring & corporate advisory), Coastal Maritime
+        Legal Group (fleet/warehouse asset & regulatory advisory), and
+        Beacon Trade Compliance Counsel (cross-border customs/trade
+        advisory), each billing just over USD 1,000,000 (USD 1,083,000 /
+        USD 1,172,450 / USD 1,035,450) with its own bank/account/routing
+        details. Exists to exercise the case where a folder has MULTIPLE
+        distinct 3rd Party Provider documents rather than one — each
+        becomes its own Standing Instruction, and the Fund Flow
+        Document's "Legal & Professional Fees" section splits across all
+        three when generated.
+    This deal has no Checker member in the seed data, so uploading any
+    of these also exercises FR-15's fallback-assignment behavior — each
+    resulting Standing Instruction gets routed to the deal's Ops Manager
+    (Omar) for oversight instead of sitting unassigned.
+
 How to use these:
   Drag any of these .pdf files into a Deal Room in the dealops app to
   simulate a real document upload, and see auto-foldering (FR-3), the

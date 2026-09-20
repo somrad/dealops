@@ -40,9 +40,16 @@ class DealOut(BaseModel):
     last_message_text: Optional[str] = None
     last_message_at: Optional[datetime] = None
     last_message_user: Optional[str] = None
+    # Deal Map fields, mirrored onto every dashboard tile so a deal's shape
+    # is visible without opening it (see build_deal_out).
+    borrower_names: List[str] = []
+    lender_names: List[str] = []
+    message_count: int = 0
+    standing_instruction_count: int = 0
     # Both computed per requesting user at read time (see build_deal_out) —
     # not stored on the deal itself, since they mean something different for
     # every person looking at the dashboard.
+    pending_task_count: int = 0
     has_pending_task: bool = False
     has_mention: bool = False
 
@@ -88,6 +95,8 @@ class FundingDocumentGenerateRequest(BaseModel):
     interest_rate: float
     upfront_fee: float = 0
     legal_fee: float = 0
+    interest_amount: float = 0
+    lead_agent_fee: float = 0
     currency: str = "USD"
 
 
@@ -153,6 +162,9 @@ class StandingInstructionOut(BaseModel):
     submitted_at: datetime
     validated_by: Optional[UserOut] = None
     validated_at: Optional[datetime] = None
+    # Fallback ownership only (see models.py) — set at creation when no
+    # Checker was on the deal yet. Never grants validate permission.
+    assigned_checker: Optional[UserOut] = None
     activity: List[SsiActivityItemOut] = []
 
 
@@ -163,6 +175,23 @@ class StandingInstructionValidateRequest(BaseModel):
 class StandingInstructionValidateResponse(BaseModel):
     match: bool
     standing_instruction: StandingInstructionOut
+
+
+class PendingApprovalOut(BaseModel):
+    # Ops Manager's cross-deal oversight view (FR-15): every Standing
+    # Instruction still awaiting a Checker's blind re-entry, across every
+    # deal, with who's currently able to act on it and how long it's been
+    # waiting — not scoped to what Omar himself is assigned to, unlike the
+    # Checker's own to-do banner (FR-13b).
+    ssi_id: int
+    deal_id: int
+    deal_title: str
+    deal_reference: str
+    party_name: Optional[str] = None
+    folder: Optional[str] = None
+    submitted_at: datetime
+    hours_pending: float
+    checkers: List[UserOut] = []
 
 
 class ActivityItemOut(BaseModel):

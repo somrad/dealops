@@ -70,6 +70,8 @@ class DealContext(BaseModel):
     documents: List[DocumentContext] = []
     standing_instructions: List[StandingInstructionContext] = []
     fund_flow_document: Optional[FundFlowDocumentContext] = None
+    borrower_names: List[str] = []
+    lender_names: List[str] = []
 
 
 class AgentRespondRequest(BaseModel):

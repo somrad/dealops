@@ -101,9 +101,16 @@ class StandingInstruction(Base):
     submitted_at = Column(DateTime, default=datetime.utcnow)
     validated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     validated_at = Column(DateTime, nullable=True)
+    # Fallback ownership, stamped once at creation (see run_extraction_pipeline
+    # in routes/documents.py): if the deal has no Checker member yet, this SSI
+    # is routed to an Ops Manager so someone is visibly responsible for it —
+    # NOT a permission grant. Only a Checker can still validate it (FR-10);
+    # this is purely "who should go staff a real Checker onto this deal."
+    assigned_checker_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     document = relationship("Document")
     validated_by = relationship("User", foreign_keys=[validated_by_id])
+    assigned_checker = relationship("User", foreign_keys=[assigned_checker_id])
 
 
 class DealView(Base):

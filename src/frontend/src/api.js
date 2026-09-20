@@ -132,6 +132,12 @@ export function listDealActivity(dealId) {
   return apiRequest(`/deals/${dealId}/activity`);
 }
 
+// FR-15: Ops Manager's cross-deal oversight of every pending Standing
+// Instruction, not just ones in a deal they happen to be looking at.
+export function listPendingApprovals() {
+  return apiRequest("/admin/pending-approvals");
+}
+
 // The evidence view for an SSI: the source document with the exact spots
 // the extraction read from highlighted — same auth-header-then-blob pattern
 // as fetchDocumentBlob.

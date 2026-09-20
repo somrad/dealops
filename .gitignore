@@ -20,6 +20,11 @@ src/logs/
 # Frontend build output
 src/frontend/dist/
 
+# E2E test tooling — deps + run artifacts, not source
+tests/node_modules/
+tests/test-results/
+tests/playwright-report/
+
 # Editor / OS
 .vscode/
 .DS_Store

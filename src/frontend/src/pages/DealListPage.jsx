@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaPlus, FaBuilding, FaIndustry, FaHome, FaInbox, FaFileAlt, FaCommentDots, FaThLarge, FaListUl, FaTasks, FaAt } from "react-icons/fa";
-import { listDeals, createDeal } from "../api";
+import { FaPlus, FaBuilding, FaIndustry, FaHome, FaInbox, FaThLarge, FaListUl, FaTasks, FaAt, FaUserShield } from "react-icons/fa";
+import { listDeals, createDeal, listPendingApprovals } from "../api";
 import Modal from "../components/Modal";
 import Avatar from "../components/Avatar";
 
@@ -13,14 +13,19 @@ const PRODUCT_META = {
 };
 const DEFAULT_PRODUCT_META = { icon: FaBuilding, iconBg: "#eff6ff", iconColor: "#2563eb" };
 
-function timeAgo(isoString) {
-  const diffMs = Date.now() - new Date(isoString).getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+// Borrower/Lenders render as a stacked, right-aligned list, one name per
+// line — past 9 names it stops being a useful list to read on a dashboard
+// tile, so it collapses to a single "…" instead.
+function PartyList({ names }) {
+  if (!names || names.length === 0) return <span className="party-list-empty">—</span>;
+  if (names.length > 9) return <span className="party-list-empty">…</span>;
+  return (
+    <div className="party-list">
+      {names.map((name, i) => (
+        <div key={i} className="party-list-item">{name}</div>
+      ))}
+    </div>
+  );
 }
 
 // A big, unmissable signal that the current user specifically has something
@@ -31,8 +36,12 @@ function DealBadges({ deal }) {
   return (
     <div className="deal-badges">
       {deal.has_pending_task && (
-        <span className="deal-badge deal-badge-task" title="You have a pending task in this deal">
+        <span
+          className="deal-badge deal-badge-task"
+          title={`${deal.pending_task_count} Standing Instruction${deal.pending_task_count === 1 ? "" : "s"} awaiting your review`}
+        >
           <FaTasks />
+          <span className="deal-badge-count">{deal.pending_task_count}</span>
         </span>
       )}
       {deal.has_mention && (
@@ -44,54 +53,151 @@ function DealBadges({ deal }) {
   );
 }
 
-// The members / documents / last-message sections are identical in both the
-// card and list layouts — only how they're arranged around them differs.
-function DealSections({ deal }) {
+// Dashboard-level "what do I need to do right now" summary — surfaces every
+// deal's pending_task_count (today, only ever a Checker's pending Standing
+// Instruction reviews) as a real to-do list on login, not just a per-tile
+// badge someone has to notice on their own. Naturally scoped to nothing for
+// any role without a task type yet, since pending_task_count is already 0
+// for them server-side.
+function TodoBanner({ deals, onOpenDeal }) {
+  const items = deals.filter((d) => d.pending_task_count > 0);
+  const total = items.reduce((sum, d) => sum + d.pending_task_count, 0);
+  if (total === 0) return null;
+
   return (
-    <>
-      <div className="deal-section">
-        <h4>Members</h4>
-        <div className="avatar-wrap">
-          {deal.members.map((m) => (
-            <Avatar key={m.id} name={m.name} size={26} role={m.role} />
-          ))}
+    <div className="todo-banner">
+      <div className="todo-banner-header">
+        <span className="todo-banner-icon">
+          <FaTasks />
+        </span>
+        <div>
+          <strong>
+            {total} Standing Instruction{total === 1 ? "" : "s"} awaiting your review
+          </strong>
+          <p className="muted small">Blind re-entry confirmation is waiting on you before {items.length === 1 ? "this deal" : "these deals"} can move forward.</p>
         </div>
       </div>
-
-      <div className="deal-section">
-        <h4>
-          <FaFileAlt /> Documents
-        </h4>
-        {deal.document_count > 0 ? (
-          <p className="small">{deal.document_count} document{deal.document_count === 1 ? "" : "s"}</p>
-        ) : (
-          <p className="muted small">No documents yet</p>
-        )}
+      <div className="todo-banner-list">
+        {items.map((d) => (
+          <button key={d.id} type="button" className="todo-banner-item" onClick={() => onOpenDeal(d.id)}>
+            <span>{d.title}</span>
+            <span className="todo-banner-item-count">{d.pending_task_count}</span>
+          </button>
+        ))}
       </div>
+    </div>
+  );
+}
 
-      <div className="deal-section deal-section-chat">
-        <h4>
-          <FaCommentDots /> Last message
-        </h4>
-        {deal.last_message_text ? (
-          <p className="small">
-            <strong>{deal.last_message_user}: </strong>
-            {deal.last_message_text.length > 60
-              ? deal.last_message_text.slice(0, 60) + "…"
-              : deal.last_message_text}
-            <span className="muted"> · {timeAgo(deal.last_message_at)}</span>
-          </p>
-        ) : (
-          <p className="muted small">No messages yet</p>
-        )}
+// Pared down to just Product/Borrower/Lenders (Status is already the pill
+// in the card header; Members/Messages/Standing-instructions counts were
+// dropped as not needed on the dashboard tile itself) — member avatars
+// pinned to the bottom of the tile regardless of how tall the lists above
+// are.
+function DealSections({ deal, productLabel }) {
+  return (
+    <div className="deal-map-mini">
+      <div className="sidebar-row">
+        <span>Product</span>
+        <strong>{productLabel}</strong>
       </div>
-    </>
+      <div className="sidebar-row">
+        <span>Borrower</span>
+        <PartyList names={deal.borrower_names} />
+      </div>
+      <div className="sidebar-row">
+        <span>Lenders</span>
+        <PartyList names={deal.lender_names} />
+      </div>
+      <div className="avatar-wrap deal-map-mini-avatars">
+        {deal.members.map((m) => (
+          <Avatar key={m.id} name={m.name} size={26} role={m.role} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function formatDateTime(isoString) {
+  return new Date(isoString).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatAge(hours) {
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  if (hours < 48) return `${hours.toFixed(1)}h`;
+  return `${(hours / 24).toFixed(1)}d`;
+}
+
+// Ops Manager oversight (FR-15) — every pending Standing Instruction across
+// EVERY deal, not just deals Omar happens to be looking at, so he can spot
+// something stalling and add another Checker to that deal (via the same
+// @mention-in-chat flow that already grants membership — clicking a row
+// opens the deal so he can do exactly that). Row background age-codes each
+// item so the oldest, most overdue items are visually unmissable.
+function PendingApprovalsPanel({ approvals, onOpenDeal }) {
+  if (approvals.length === 0) return null;
+  const sorted = [...approvals].sort((a, b) => b.hours_pending - a.hours_pending);
+
+  return (
+    <div className="approvals-panel">
+      <div className="todo-banner-header">
+        <span className="todo-banner-icon approvals-panel-icon">
+          <FaUserShield />
+        </span>
+        <div>
+          <strong>
+            {approvals.length} open approval{approvals.length === 1 ? "" : "s"} across all deals
+          </strong>
+          <p className="muted small">Every Standing Instruction still awaiting a Checker's review — oldest first. Open a deal to add another Checker if one's stalling.</p>
+        </div>
+      </div>
+      <div className="approvals-table-wrap">
+        <table className="approvals-table">
+          <thead>
+            <tr>
+              <th>Deal</th>
+              <th>Party</th>
+              <th>Folder</th>
+              <th>Checker(s)</th>
+              <th>Pending since</th>
+              <th>Age</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((a) => {
+              const urgency = a.hours_pending > 8 ? "urgent" : a.hours_pending > 4 ? "warning" : "normal";
+              return (
+                <tr key={a.ssi_id} className={`approvals-row approvals-row-${urgency}`} onClick={() => onOpenDeal(a.deal_id)}>
+                  <td>
+                    <strong>{a.deal_title}</strong>
+                    <span className="muted"> {a.deal_reference}</span>
+                  </td>
+                  <td>{a.party_name || "Unnamed party"}</td>
+                  <td>{a.folder || "—"}</td>
+                  <td>
+                    {a.checkers.length > 0 ? a.checkers.map((c) => c.name).join(", ") : <span className="muted">Unassigned</span>}
+                  </td>
+                  <td>{formatDateTime(a.submitted_at)}</td>
+                  <td className="approvals-age">{formatAge(a.hours_pending)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
 function DealListPage({ user }) {
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [approvals, setApprovals] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [reference, setReference] = useState("");
   const [title, setTitle] = useState("");
@@ -110,6 +216,11 @@ function DealListPage({ user }) {
       setDeals(data);
       setLoading(false);
     });
+    // Ops-Manager-only endpoint — skip the call entirely for every other
+    // role rather than firing a request that's always going to 403.
+    if (user.role === "ops_manager") {
+      listPendingApprovals().then(setApprovals);
+    }
   }
 
   async function handleCreate(event) {
@@ -155,6 +266,11 @@ function DealListPage({ user }) {
         </div>
       </div>
 
+      {!loading && <TodoBanner deals={deals} onOpenDeal={(id) => navigate(`/deals/${id}`)} />}
+      {!loading && user.role === "ops_manager" && (
+        <PendingApprovalsPanel approvals={approvals} onOpenDeal={(id) => navigate(`/deals/${id}`)} />
+      )}
+
       {loading ? (
         <p className="muted">Loading deals...</p>
       ) : deals.length === 0 ? (
@@ -187,7 +303,7 @@ function DealListPage({ user }) {
                   <span className="tag">{meta.label}</span>
                   <span className={`status-pill status-${deal.status}`}>{deal.status}</span>
                 </div>
-                <DealSections deal={deal} />
+                <DealSections deal={deal} productLabel={meta.label} />
               </div>
             );
           })}
@@ -212,7 +328,7 @@ function DealListPage({ user }) {
                     </div>
                   </div>
                 </div>
-                <DealSections deal={deal} />
+                <DealSections deal={deal} productLabel={meta.label} />
                 <DealBadges deal={deal} />
               </div>
             );

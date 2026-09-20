@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useDropzone } from "react-dropzone";
-import { FaPaperPlane, FaBuilding, FaIndustry, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaDownload, FaComments, FaFlag, FaRobot, FaUserTie, FaUniversity, FaEye, FaArrowLeft, FaCheckCircle, FaHighlighter, FaExchangeAlt, FaEllipsisV, FaTrashAlt, FaShare, FaSitemap, FaHandHoldingUsd, FaFileInvoiceDollar, FaClipboardCheck } from "react-icons/fa";
+import { FaPaperPlane, FaBuilding, FaIndustry, FaHome, FaBars, FaTimes, FaFileAlt, FaFolder, FaUpload, FaCloudUploadAlt, FaDownload, FaComments, FaFlag, FaRobot, FaUserTie, FaUniversity, FaUsers, FaEye, FaArrowLeft, FaCheckCircle, FaHighlighter, FaExchangeAlt, FaEllipsisV, FaTrashAlt, FaShare, FaSitemap, FaHandHoldingUsd, FaFileInvoiceDollar, FaClipboardCheck } from "react-icons/fa";
 import { GiPoliceOfficerHead } from "react-icons/gi";
 import {
   getDeal,
@@ -27,6 +27,8 @@ import {
 import Avatar from "../components/Avatar";
 import AccordionItem from "../components/AccordionItem";
 import Modal from "../components/Modal";
+import Brand from "../components/Brand";
+import ProfileMenu from "../components/ProfileMenu";
 
 const ACTIVITY_ICONS = {
   deal_created: FaFlag,
@@ -108,6 +110,13 @@ function renderMessageText(text, usersByUsername) {
 // Agent replies are plain text built from f-strings/joins in agent_skills.py
 // ("  - name" bullets, "Header:" lines) — this gives that structure real
 // visual shape (bullets, bold headers) instead of a flat wall of text.
+// A short "Label: value" line (describe's output shape) — rendered as a
+// real two-column row instead of running the colon together with prose, so
+// /describe reads as a proper table in the chat window instead of a wall
+// of text. Label capped short so an ordinary sentence with a colon further
+// in (rare, but possible) doesn't get misread as a table row.
+const TABLE_ROW_PATTERN = /^([A-Za-z][A-Za-z0-9 /'-]{1,28}):\s+(.+)$/;
+
 function formatBotMessage(text) {
   return text.split("\n").map((line, i) => {
     const trimmed = line.trim();
@@ -126,11 +135,20 @@ function formatBotMessage(text) {
         </div>
       );
     }
+    const tableMatch = trimmed.match(TABLE_ROW_PATTERN);
+    if (tableMatch) {
+      return (
+        <div key={i} className="bot-table-row">
+          <span className="bot-table-label">{tableMatch[1]}</span>
+          <span className="bot-table-value">{tableMatch[2]}</span>
+        </div>
+      );
+    }
     return <div key={i}>{line}</div>;
   });
 }
 
-function DealRoomPage({ user }) {
+function DealRoomPage({ user, onLogout }) {
   const { dealId } = useParams();
   const [deal, setDeal] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -167,7 +185,7 @@ function DealRoomPage({ user }) {
   const [moving, setMoving] = useState(false);
   const [fundingDoc, setFundingDoc] = useState(null);
   const [showGenerateForm, setShowGenerateForm] = useState(false);
-  const [generateForm, setGenerateForm] = useState({ loan_amount: "", interest_rate: "", upfront_fee: "", legal_fee: "", currency: "USD" });
+  const [generateForm, setGenerateForm] = useState({ loan_amount: "", interest_rate: "", upfront_fee: "", legal_fee: "", interest_amount: "", lead_agent_fee: "", currency: "USD" });
   const [generatingFunding, setGeneratingFunding] = useState(false);
   const [uploadingFunding, setUploadingFunding] = useState(false);
   const chatBoxRef = useRef(null);
@@ -182,14 +200,6 @@ function DealRoomPage({ user }) {
     const interval = setInterval(refresh, 3000);
     return () => clearInterval(interval);
   }, [dealId]);
-
-  // Show the deal's own name as the browser tab title while in its Deal Room.
-  useEffect(() => {
-    if (deal) document.title = deal.title;
-    return () => {
-      document.title = "dealops";
-    };
-  }, [deal]);
 
   function refresh() {
     listMessages(dealId).then(setMessages);
@@ -375,6 +385,8 @@ function DealRoomPage({ user }) {
         interest_rate: parseFloat(generateForm.interest_rate) || 0,
         upfront_fee: parseFloat(generateForm.upfront_fee) || 0,
         legal_fee: parseFloat(generateForm.legal_fee) || 0,
+        interest_amount: parseFloat(generateForm.interest_amount) || 0,
+        lead_agent_fee: parseFloat(generateForm.lead_agent_fee) || 0,
         currency: generateForm.currency || "USD",
       };
       const result = await generateFundingDocument(dealId, payload);
@@ -609,6 +621,13 @@ function DealRoomPage({ user }) {
     () => standingInstructions.filter((s) => s.document_folder === "Lenders"),
     [standingInstructions]
   );
+  // Everything that isn't Borrower or Lenders — 3rd Party Providers, Unfiled,
+  // and anything else FR-3's classifier might ever produce — one catch-all
+  // tab rather than a growing list of per-folder ones.
+  const otherSsis = useMemo(
+    () => standingInstructions.filter((s) => s.document_folder !== "Borrower" && s.document_folder !== "Lenders"),
+    [standingInstructions]
+  );
   const borrowerPendingCount = useMemo(
     () => borrowerSsis.filter((s) => s.status === "pending_checker_review").length,
     [borrowerSsis]
@@ -617,7 +636,14 @@ function DealRoomPage({ user }) {
     () => lenderSsis.filter((s) => s.status === "pending_checker_review").length,
     [lenderSsis]
   );
-  const activeSsiList = rightPanelView === "ssi-borrower" ? borrowerSsis : rightPanelView === "ssi-lender" ? lenderSsis : [];
+  const otherPendingCount = useMemo(
+    () => otherSsis.filter((s) => s.status === "pending_checker_review").length,
+    [otherSsis]
+  );
+  const activeSsiList =
+    rightPanelView === "ssi-borrower" ? borrowerSsis :
+    rightPanelView === "ssi-lender" ? lenderSsis :
+    rightPanelView === "ssi-other" ? otherSsis : [];
   const detailSsi = activeSsiList.find((s) => s.id === ssiDetailId) || null;
 
   // One toggle for the whole right column, shared by the rail icons and the
@@ -782,6 +808,8 @@ function DealRoomPage({ user }) {
     <div className="deal-room-page-v2">
       <div className="deal-top-bar">
         <div className="deal-top-bar-main">
+          <Brand />
+          <span className="topbar-divider" />
           <div className="deal-room-icon" style={{ background: meta.iconBg, color: meta.iconColor }}>
             <Icon />
           </div>
@@ -801,6 +829,7 @@ function DealRoomPage({ user }) {
           <button className="btn-ghost drawer-trigger" onClick={() => setShowDrawer(true)} title="Deal details">
             <FaBars />
           </button>
+          <ProfileMenu user={user} onLogout={onLogout} />
         </div>
       </div>
 
@@ -839,6 +868,15 @@ function DealRoomPage({ user }) {
           >
             <FaUniversity />
             {lenderPendingCount > 0 && <span className="rail-badge">{lenderPendingCount}</span>}
+          </button>
+          <button
+            type="button"
+            className={`icon-rail-btn other-rail-btn ${showChatPanel && rightPanelView === "ssi-other" ? "active" : ""}`}
+            onClick={() => toggleRightPanel("ssi-other")}
+            title="SSI — 3rd Party & Other"
+          >
+            <FaUsers />
+            {otherPendingCount > 0 && <span className="rail-badge">{otherPendingCount}</span>}
           </button>
           <button
             type="button"
@@ -1069,6 +1107,10 @@ function DealRoomPage({ user }) {
             {messages
               .map((m) => {
                 const isBot = m.user.role === "agent";
+                // describe's reply always opens with "{title} ({reference})"
+                // — a deterministic way to spot it without any new message
+                // metadata, since chat messages are plain text end to end.
+                const isDescribeReply = isBot && deal && m.text.startsWith(`${deal.title} (${deal.reference})`);
                 return (
                   <div key={m.id} className={`message-row ${isBot ? `bot-message-box level-${m.level}` : ""}`}>
                     <Avatar name={m.user.name} size={36} role={m.user.role} />
@@ -1080,6 +1122,13 @@ function DealRoomPage({ user }) {
                         <div className="message-text">{formatBotMessage(m.text)}</div>
                       ) : (
                         <p className="message-text">{renderMessageText(m.text, usersByUsername)}</p>
+                      )}
+                      {isDescribeReply && (
+                        <div className="bot-message-members">
+                          {members.map((mem) => (
+                            <Avatar key={mem.id} name={mem.name} size={26} role={mem.role} />
+                          ))}
+                        </div>
                       )}
                       <div className="message-timestamp">{formatDateTime(m.created_at)}</div>
                     </div>
@@ -1155,7 +1204,7 @@ function DealRoomPage({ user }) {
           </>
         )}
 
-        {(rightPanelView === "ssi-borrower" || rightPanelView === "ssi-lender") && (
+        {(rightPanelView === "ssi-borrower" || rightPanelView === "ssi-lender" || rightPanelView === "ssi-other") && (
           <div className="ssi-panel">
             <div className="ssi-panel-header">
               {detailSsi ? (
@@ -1167,7 +1216,7 @@ function DealRoomPage({ user }) {
                 </>
               ) : (
                 <span className="ssi-panel-title">
-                  {rightPanelView === "ssi-borrower" ? "Borrower" : "Lender"} Standing Instructions ({activeSsiList.length})
+                  {rightPanelView === "ssi-borrower" ? "Borrower" : rightPanelView === "ssi-lender" ? "Lender" : "3rd Party & Other"} Standing Instructions ({activeSsiList.length})
                 </span>
               )}
               <button
@@ -1201,6 +1250,14 @@ function DealRoomPage({ user }) {
                       {SSI_STATUS_LABELS[detailSsi.status] || detailSsi.status}
                     </span>
                   </div>
+                  {detailSsi.assigned_checker && (
+                    <div className="sidebar-row">
+                      <span>Assigned to</span>
+                      <strong title="No Checker was on this deal when this was extracted — routed here for oversight until one is added. Only a Checker can actually approve it.">
+                        {detailSsi.assigned_checker.name}
+                      </strong>
+                    </div>
+                  )}
                   <div className="sidebar-row">
                     <span>Loan IQ reference</span>
                     <strong>{detailSsi.loan_iq_reference || "—"}</strong>
@@ -1606,6 +1663,18 @@ function DealRoomPage({ user }) {
               type="number" step="0.01"
               value={generateForm.legal_fee}
               onChange={(e) => setGenerateForm({ ...generateForm, legal_fee: e.target.value })}
+            />
+            <label>Prepaid interest</label>
+            <input
+              type="number" step="0.01"
+              value={generateForm.interest_amount}
+              onChange={(e) => setGenerateForm({ ...generateForm, interest_amount: e.target.value })}
+            />
+            <label>Lead agent fee</label>
+            <input
+              type="number" step="0.01"
+              value={generateForm.lead_agent_fee}
+              onChange={(e) => setGenerateForm({ ...generateForm, lead_agent_fee: e.target.value })}
             />
             <label>Currency</label>
             <input

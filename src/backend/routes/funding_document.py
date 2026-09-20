@@ -51,7 +51,8 @@ def generate(
 
     generate_funding_document(
         db, deal, current_user, agent, storage_path,
-        payload.loan_amount, payload.interest_rate, payload.upfront_fee, payload.legal_fee, payload.currency,
+        payload.loan_amount, payload.interest_rate, payload.upfront_fee, payload.legal_fee,
+        interest_amount=payload.interest_amount, lead_agent_fee=payload.lead_agent_fee, currency=payload.currency,
     )
     db.refresh(deal)
     return build_funding_document_out(db, deal, storage_path)

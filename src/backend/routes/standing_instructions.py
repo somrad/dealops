@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Document, Message, StandingInstruction, User
-from schemas import StandingInstructionOut, StandingInstructionValidateRequest, StandingInstructionValidateResponse
+from models import Deal, Document, Message, StandingInstruction, User
+from schemas import PendingApprovalOut, StandingInstructionOut, StandingInstructionValidateRequest, StandingInstructionValidateResponse
 from security import get_current_user
-from routes.deals import require_deal_membership, get_or_create_deal_agent
+from routes.deals import require_deal_membership, get_or_create_deal_agent, get_deal_members
 from routes.documents import deal_storage_path
 from pdf_highlight import highlight_terms_in_pdf
 
@@ -52,11 +52,57 @@ def build_ssi_out(ssi: StandingInstruction, document: Document, db: Session) -> 
         "submitted_at": ssi.submitted_at,
         "validated_by": ssi.validated_by,
         "validated_at": ssi.validated_at,
+        "assigned_checker": ssi.assigned_checker,
         "activity": [
             {"text": m.text, "level": m.level, "actor_name": m.user.name, "created_at": m.created_at}
             for m in activity_rows
         ],
     }
+
+
+@router.get("/admin/pending-approvals", response_model=List[PendingApprovalOut])
+def list_pending_approvals(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # FR-15: Ops Manager oversight — every Standing Instruction still
+    # awaiting a Checker's blind re-entry, across EVERY deal (not just
+    # deals Omar happens to be a member of — Ops Managers already have
+    # standing visibility everywhere, see get_deal_members), so he can spot
+    # something stalling and add another Checker to the deal.
+    if current_user.role != "ops_manager":
+        raise HTTPException(status_code=403, detail="Ops Manager only")
+
+    rows = (
+        db.query(StandingInstruction)
+        .filter(StandingInstruction.status == "pending_checker_review")
+        .order_by(StandingInstruction.submitted_at)
+        .all()
+    )
+    now = datetime.utcnow()
+    deals_by_id = {d.id: d for d in db.query(Deal).all()}
+    checkers_by_deal = {}
+
+    out = []
+    for ssi in rows:
+        deal = deals_by_id.get(ssi.deal_id)
+        if deal is None:
+            continue
+        if deal.id not in checkers_by_deal:
+            checkers_by_deal[deal.id] = [m for m in get_deal_members(deal.id, db) if m.role == "checker"]
+        # A real Checker on the deal always wins; otherwise fall back to
+        # whoever this SSI was routed to at creation (an Ops Manager — see
+        # StandingInstruction.assigned_checker) instead of showing empty.
+        checkers = checkers_by_deal[deal.id] or ([ssi.assigned_checker] if ssi.assigned_checker else [])
+        out.append({
+            "ssi_id": ssi.id,
+            "deal_id": deal.id,
+            "deal_title": deal.title,
+            "deal_reference": deal.reference,
+            "party_name": ssi.account_holder_name,
+            "folder": ssi.document.folder if ssi.document else None,
+            "submitted_at": ssi.submitted_at,
+            "hours_pending": round((now - ssi.submitted_at).total_seconds() / 3600, 2),
+            "checkers": checkers,
+        })
+    return out
 
 
 @router.get("/deals/{deal_id}/standing-instructions", response_model=List[StandingInstructionOut])

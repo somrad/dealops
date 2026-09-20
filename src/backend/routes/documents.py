@@ -10,7 +10,7 @@ from database import get_db
 from models import Document, Message, StandingInstruction, User
 from schemas import DocumentOut, DocumentCompareOut, DocumentMoveRequest
 from security import get_current_user
-from routes.deals import require_deal_membership, get_or_create_deal_agent
+from routes.deals import require_deal_membership, get_or_create_deal_agent, get_fallback_ssi_assignee
 from activity import log_activity
 from document_diff import extract_text_for_diff, build_diff_rows
 import ai_client
@@ -61,6 +61,10 @@ def run_extraction_pipeline(db: Session, deal_id: int, document: Document, conte
             actor_id=agent.id,
         )
 
+    # Checked once per pipeline run, not per party — deal membership doesn't
+    # change mid-loop. None means a real Checker is already on the deal.
+    fallback_assignee = get_fallback_ssi_assignee(deal_id, db) if parties else None
+
     for party in parties:
         ssi = StandingInstruction(
             deal_id=deal_id,
@@ -69,6 +73,7 @@ def run_extraction_pipeline(db: Session, deal_id: int, document: Document, conte
             bank_name=party.get("bank_name"),
             account_number=party["account_number"],
             routing_number=party["routing_number"],
+            assigned_checker_id=fallback_assignee.id if fallback_assignee else None,
         )
         db.add(ssi)
         db.commit()
@@ -82,13 +87,17 @@ def run_extraction_pipeline(db: Session, deal_id: int, document: Document, conte
 
         who = ssi.account_holder_name or "an unnamed party"
         last4 = ssi.account_number[-4:] if len(ssi.account_number) >= 4 else ssi.account_number
+        awaiting = (
+            f"Awaiting review by {fallback_assignee.name} — no Checker is on this deal yet."
+            if fallback_assignee else "Awaiting Checker validation."
+        )
         db.add(Message(
             deal_id=deal_id,
             user_id=agent.id,
             text=(
                 f"Extracted payment details for {who} from {document.original_filename} and submitted a standing "
                 f"instruction to Loan IQ (account ...{last4}, reference {ssi.loan_iq_reference}). "
-                f"Awaiting Checker validation."
+                f"{awaiting}"
             ),
             level="info",
             standing_instruction_id=ssi.id,

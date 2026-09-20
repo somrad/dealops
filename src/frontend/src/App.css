@@ -414,18 +414,6 @@ label {
 }
 
 /* Shared members/documents/last-message sections, used by both layouts below */
-.deal-section h4 {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--color-text-muted);
-  margin: 0 0 0.4rem;
-  font-weight: 600;
-}
-
 .small {
   font-size: 0.82rem;
 }
@@ -436,16 +424,51 @@ label {
   gap: 6px;
 }
 
-/* List (horizontal bar) layout: sections sit side by side with a divider */
-.deal-bar .deal-section {
+/* Deal Map mini table, mirrored from the Deal Room's own "Deal Map" panel
+   (.sidebar-row) — Product/Borrower/Lenders, plus a row of member avatars
+   underneath. flex:1 + the avatar row's margin-top:auto is what pins the
+   avatars to the bottom of the tile regardless of how tall the party
+   lists above them are. */
+.deal-map-mini {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+}
+
+.deal-map-mini .sidebar-row {
+  font-size: 0.8rem;
+  align-items: flex-start;
+}
+
+.deal-map-mini-avatars {
+  margin-top: auto;
+  padding-top: 0.6rem;
+}
+
+/* Borrower/Lenders: stacked, right-aligned, one name per line. */
+.party-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.party-list-item {
+  line-height: 1.35;
+}
+
+.party-list-empty {
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+/* List (horizontal bar) layout: the mini table sits beside the header
+   with a divider, same treatment the old per-column sections used. */
+.deal-bar .deal-map-mini {
+  flex: 1.6;
   min-width: 0;
   border-left: 1px solid var(--color-surface);
   padding-left: 1.5rem;
-}
-
-.deal-bar .deal-section-chat {
-  flex: 1.6;
 }
 
 /* Card (vertical) layout: 3 per row, sections stack with a top divider */
@@ -495,7 +518,7 @@ label {
   font-size: 1rem;
 }
 
-.deal-card-v .deal-section {
+.deal-card-v .deal-map-mini {
   border-top: 1px solid var(--color-surface);
   padding-top: 0.6rem;
 }
@@ -517,6 +540,7 @@ label {
 }
 
 .deal-badge {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -535,6 +559,203 @@ label {
 .deal-badge-mention {
   background: var(--color-primary-light);
   color: var(--color-primary);
+}
+
+/* Numeral on the per-tile task badge — how many Standing Instructions,
+   not just "something's pending." */
+.deal-badge-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.15rem;
+  border-radius: 50%;
+  background: #b45309;
+  color: white;
+  font-size: 0.62rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px white;
+}
+
+/* Dashboard-level to-do list — what needs the current user's attention
+   right now, across every deal, surfaced on login rather than left for
+   someone to notice a per-tile badge on their own. Same amber family as
+   .deal-badge-task, just a full-width banner instead of an icon. */
+.todo-banner {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.todo-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.todo-banner-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  background: #fef3c7;
+  color: #b45309;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.todo-banner-header strong {
+  font-size: 0.95rem;
+}
+
+.todo-banner-header p {
+  margin: 0.15rem 0 0;
+}
+
+.todo-banner-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.85rem;
+}
+
+.todo-banner-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: white;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: 0.35rem 0.5rem 0.35rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+
+.todo-banner-item:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.todo-banner-item-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.3rem;
+  height: 1.3rem;
+  padding: 0 0.3rem;
+  border-radius: 50%;
+  background: #b45309;
+  color: white;
+  font-size: 0.72rem;
+}
+
+/* Ops Manager's cross-deal oversight table (FR-15) — a neutral surface,
+   not amber like the personal to-do banner, since this isn't "your" work,
+   it's a triage view over everyone's. Urgency lives entirely in the row
+   backgrounds below. */
+.approvals-panel {
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.approvals-panel-icon {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+}
+
+.approvals-table-wrap {
+  margin-top: 0.85rem;
+  overflow-x: auto;
+}
+
+.approvals-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.approvals-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+}
+
+.approvals-table td {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--color-surface);
+}
+
+/* Only the short, fixed-shape columns stay single-line — Deal/Party/
+   Checker(s) can be long and should wrap rather than force the table
+   wider than its container (which would clip Age off the visible edge). */
+.approvals-table td:nth-child(5),
+.approvals-table td:nth-child(6) {
+  white-space: nowrap;
+}
+
+.approvals-row {
+  cursor: pointer;
+  transition: filter 0.1s ease;
+}
+
+.approvals-row:hover {
+  filter: brightness(0.97);
+}
+
+/* Age thresholds, per the founder's ask: over 8h is red, over 4h is
+   orange — deliberately loud backgrounds (not just a colored badge) since
+   the point is a stalled item should be impossible to miss while scanning
+   the table. */
+.approvals-row-normal {
+  background: white;
+}
+
+.approvals-row-warning {
+  background: #ffedd5;
+}
+
+.approvals-row-warning td {
+  border-bottom-color: #fed7aa;
+}
+
+.approvals-row-urgent {
+  background: #fee2e2;
+}
+
+.approvals-row-urgent td {
+  border-bottom-color: #fecaca;
+}
+
+.approvals-age {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.approvals-row-warning .approvals-age {
+  color: #c2410c;
+}
+
+.approvals-row-urgent .approvals-age {
+  color: #b91c1c;
 }
 
 /* Layout toggle (burger menu) */
@@ -589,6 +810,7 @@ label {
   gap: 0.5rem;
   margin-top: 0.5rem;
   flex-wrap: wrap;
+  justify-content: space-between;
 }
 
 .tag {
@@ -966,6 +1188,17 @@ label {
   gap: 0.75rem;
 }
 
+.deal-top-bar-main .navbar-brand {
+  flex-shrink: 0;
+}
+
+.topbar-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
 .deal-top-bar-main h1 {
   font-size: 1rem;
 }
@@ -988,7 +1221,11 @@ label {
    float as another card inside the centered content area. */
 .deal-room-layout {
   display: flex;
-  height: calc(100vh - 110px);
+  /* .deal-top-bar is the only header now (the global Navbar no longer
+     renders on this page — its brand/profile moved into this same bar) —
+     was 110px, calibrated for the old two-bar layout; left stale after
+     that merge and showed up as dead space at the bottom of the screen. */
+  height: calc(100vh - 50px);
 }
 
 .icon-rail {
@@ -1767,6 +2004,39 @@ label {
 
 .bot-message-spacer {
   height: 0.35rem;
+}
+
+.bot-table-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.bot-table-row:last-child {
+  border-bottom: none;
+}
+
+.bot-table-label {
+  color: inherit;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.bot-table-value {
+  font-weight: 600;
+  text-align: right;
+}
+
+.bot-message-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 .mention {

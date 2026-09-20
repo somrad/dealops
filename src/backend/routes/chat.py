@@ -9,7 +9,7 @@ from schemas import MessageCreate, MessageOut
 from security import get_current_user
 from routes.deals import require_deal_membership, get_or_create_deal_agent, get_deal_members
 from routes.documents import deal_storage_path
-from funding_document import generate_funding_document
+from funding_document import generate_funding_document, _parties_for_folder
 import ai_client
 
 router = APIRouter()
@@ -18,8 +18,9 @@ MENTION_PATTERN = re.compile(r"@(\w+)")
 
 GENERATE_FUNDING_PATTERN = re.compile(r"^generate-funding-document(?:\s+(.*))?$", re.IGNORECASE | re.DOTALL)
 FUNDING_USAGE = (
-    "/generate-funding-document <loan_amount> <interest_rate> [<upfront_fee> <legal_fee>]\n"
-    "Example: /generate-funding-document 2000000 8.25 20000 8975 (amount, rate, upfront fee, legal fee)"
+    "/generate-funding-document <loan_amount> <interest_rate> [<upfront_fee> <legal_fee> <interest_amount> <lead_agent_fee>]\n"
+    "Example: /generate-funding-document 2000000 8.25 20000 8975 13750 5000\n"
+    "(amount, rate, upfront fee, legal fee, prepaid interest, lead agent fee)"
 )
 
 
@@ -53,6 +54,13 @@ def build_deal_context(deal, db: Session) -> dict:
         if ff_doc:
             fund_flow_document = {"filename": ff_doc.original_filename}
 
+    # Same document-derived party sourcing the Fund Flow Document itself
+    # uses (funding_document._parties_for_folder) — a borrower/lender is
+    # real once a document names them, even without a fresh Standing
+    # Instruction in this deal (see FR-13's co-lender-reuse case).
+    borrower_names = [p["name"] for p in _parties_for_folder(db, deal.id, "Borrower")]
+    lender_names = [p["name"] for p in _parties_for_folder(db, deal.id, "Lenders")]
+
     return {
         "title": deal.title,
         "reference": deal.reference,
@@ -70,6 +78,8 @@ def build_deal_context(deal, db: Session) -> dict:
             for s in standing_instructions
         ],
         "fund_flow_document": fund_flow_document,
+        "borrower_names": borrower_names,
+        "lender_names": lender_names,
     }
 
 
@@ -94,13 +104,18 @@ def handle_generate_funding_command(deal, current_user: User, agent: User, db: S
         interest_rate = float(parts[1])
         upfront_fee = float(parts[2]) if len(parts) > 2 else 0.0
         legal_fee = float(parts[3]) if len(parts) > 3 else 0.0
+        interest_amount = float(parts[4]) if len(parts) > 4 else 0.0
+        lead_agent_fee = float(parts[5]) if len(parts) > 5 else 0.0
     except ValueError:
         db.add(Message(deal_id=deal.id, user_id=agent.id, text=f"Couldn't read those as numbers.\n{FUNDING_USAGE}", level="error"))
         db.commit()
         return
 
     storage_path = deal_storage_path(deal.id)
-    generate_funding_document(db, deal, current_user, agent, storage_path, loan_amount, interest_rate, upfront_fee, legal_fee)
+    generate_funding_document(
+        db, deal, current_user, agent, storage_path, loan_amount, interest_rate, upfront_fee, legal_fee,
+        interest_amount=interest_amount, lead_agent_fee=lead_agent_fee,
+    )
 
 
 @router.post("/deals/{deal_id}/messages", response_model=MessageOut)

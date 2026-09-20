@@ -9,6 +9,7 @@ from models import Deal, DealMember, DealView, Document, Message, StandingInstru
 from schemas import DealCreate, DealOut, UserOut
 from security import get_current_user, hash_password
 from activity import log_activity
+from funding_document import _parties_for_folder
 
 router = APIRouter()
 
@@ -63,17 +64,33 @@ def get_deal_members(deal_id: int, db: Session) -> List[User]:
     return list(combined.values())
 
 
-def has_pending_task_for(deal_id: int, current_user: User, db: Session) -> bool:
+def get_fallback_ssi_assignee(deal_id: int, db: Session):
+    # FR-10's blind re-entry only works if a real Checker is actually on the
+    # deal — a Standing Instruction created before one's been staffed would
+    # otherwise sit with no one responsible for it. Falls back to an Ops
+    # Manager (visibility/ownership only, not a permission grant — see
+    # StandingInstruction.assigned_checker in models.py) so it's obvious who
+    # should go add a real Checker, matching FR-15's own oversight role.
+    members = get_deal_members(deal_id, db)
+    if any(m.role == "checker" for m in members):
+        return None
+    ops_managers = [m for m in members if m.role == "ops_manager"]
+    return ops_managers[0] if ops_managers else None
+
+
+def pending_task_count_for(deal_id: int, current_user: User, db: Session) -> int:
     # The only task type that exists today is a Checker's SSI validation —
     # this is deliberately narrow rather than a generic "tasks" table, since
-    # that's the only thing anyone is ever blocked waiting on right now.
+    # that's the only thing anyone is ever blocked waiting on right now. A
+    # real count (not just a yes/no flag) is what lets the dashboard say
+    # "2 Standing Instructions to review" instead of just "something's
+    # pending" — see the founder's ask for a real to-do list on login.
     if current_user.role != "checker":
-        return False
-    pending = db.query(StandingInstruction).filter(
+        return 0
+    return db.query(StandingInstruction).filter(
         StandingInstruction.deal_id == deal_id,
         StandingInstruction.status == "pending_checker_review",
-    ).first()
-    return pending is not None
+    ).count()
 
 
 def has_unread_mention_for(deal_id: int, current_user: User, db: Session) -> bool:
@@ -102,6 +119,15 @@ def build_deal_out(deal: Deal, db: Session, current_user: User) -> dict:
         .order_by(Message.created_at.desc())
         .first()
     )
+    # Deal Map summary, reused from funding_document.py's party-sourcing
+    # logic (same "built from documents on file, not just SSIs" reasoning —
+    # see _parties_for_folder) so the dashboard tile agrees with what the
+    # Fund Flow Document itself would show for Borrower/Lenders.
+    borrower_names = [p["name"] for p in _parties_for_folder(db, deal.id, "Borrower")]
+    lender_names = [p["name"] for p in _parties_for_folder(db, deal.id, "Lenders")]
+    message_count = db.query(Message).filter(Message.deal_id == deal.id).count()
+    standing_instruction_count = db.query(StandingInstruction).filter(StandingInstruction.deal_id == deal.id).count()
+    pending_task_count = pending_task_count_for(deal.id, current_user, db)
     return {
         "id": deal.id,
         "reference": deal.reference,
@@ -113,7 +139,12 @@ def build_deal_out(deal: Deal, db: Session, current_user: User) -> dict:
         "last_message_text": last_message.text if last_message else None,
         "last_message_at": last_message.created_at if last_message else None,
         "last_message_user": last_message.user.name if last_message else None,
-        "has_pending_task": has_pending_task_for(deal.id, current_user, db),
+        "borrower_names": borrower_names,
+        "lender_names": lender_names,
+        "message_count": message_count,
+        "standing_instruction_count": standing_instruction_count,
+        "pending_task_count": pending_task_count,
+        "has_pending_task": pending_task_count > 0,
         "has_mention": has_unread_mention_for(deal.id, current_user, db),
     }
 

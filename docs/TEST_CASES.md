@@ -141,12 +141,32 @@ Legend: **Role** = who performs the action. **Expected** = observable outcome.
 | TC-13.3 | Non-Deal-Team blocked | Ops Team Member, Checker, Ops Manager | Attempt to generate or upload the Fund Flow Document | 403 — verified live (Checker got 403 on generate; only `deal_team` role may call either endpoint) |
 | TC-13.4 | Replacing the Fund Flow Document | Deal Team Member | Generate or upload again after one already exists | The new document replaces the old one as `fund_flow_document_id` (verified live); the prior document itself is untouched, just no longer designated |
 | TC-13.5 | Reconciliation catches a real mismatch | Deal Team Member | Upload a Fund Flow Document that doesn't mention one of the existing SSI parties | That party's reconciliation entry reads `confirmed: false`, distinct from parties actually named in the document |
+| TC-13.6 | Statement balances with all fee types set | Deal Team Member | Generate with upfront fee, legal fee, interest amount, and lead agent fee all nonzero | Page 1's Total Sources equals Total Uses exactly (verified live: $5,000,000 = $5,000,000 with all four fee types populated); "BALANCED" is printed |
+| TC-13.7 | Uses are broken into separate labeled sections | Deal Team Member | Generate with multiple fee types set | Page 1 shows distinct "Upfront Fees" / "Interest" / "Lead Agent Fees" / "Legal & Professional Fees" sections, each line naming the actual payee — not one lump fee figure (verified live via rendered PDF image) |
+| TC-13.8 | Page 2 shows full bank details, not masked | Deal Team Member | Generate the statement, open page 2 | Full account number and routing number are printed per party (Borrower, Lenders, 3rd Party Providers), each with a Checker-validation status label and the dollar amount attributable to them (verified live via rendered PDF image) — this is intentionally different from FR-10's masked blind re-entry screen; see FR-13's note on why |
+| TC-13.9 | PDF text uses only base-font-safe characters | Deal Team Member | Generate the statement | No missing/substituted glyphs anywhere in the PDF (caught live: an em-dash rendered as a stray middle-dot because Helvetica's base-14 encoding doesn't include it — fixed by using a plain hyphen in all PDF-drawn text; em-dashes are still fine in chat messages, which render through a real web font) |
+| TC-13.10 | Two parties sharing one source document get independent amounts on page 2 | Deal Team Member | Generate the statement for a deal where one Lenders-folder document names two lenders (e.g. one wire-instructions PDF listing two co-lenders) | Each lender's page-2 "Source Amount"/"Interest Due"/"Lead Agent Fee" matches their OWN per-lender share from page 1's Sources/Uses split, not the combined total of both lenders (caught live: `_amounts_by_document_id` keyed by `document.id`, which isn't unique per party when one document yields multiple parties — both lenders showed the same summed total on page 2 while page 1 correctly showed their even split; fixed by keying on `_party_key()`, which uses the party's own `StandingInstruction.id` when one exists) |
 
 ## FR-13a — Deal Map
 
 | ID | Scenario | Role | Steps | Expected |
 |---|---|---|---|---|
 | TC-13a.1 | Census matches live data | Any Deal Room member | Open the Deal Map panel | Member/document/SSI counts match what the Documents explorer and SSI panels show; Fund Flow Document line shows its filename or "not created yet" |
+| TC-13a.2 | Dashboard tile mirrors a pared-down Deal Map | Any Deal Room member | Open the Deals dashboard, in either card (grid) or list view | Every deal tile shows Product / Borrower / Lenders rows (Status/Members/Messages so far/Standing instructions were deliberately dropped — Status is already the card header pill, the rest weren't needed on the tile), followed by a row of member avatars pinned to the bottom of the tile, sourced from `GET /deals`' `borrower_names`/`lender_names` fields (verified live via Playwright screenshot against 5 real deals in both view modes) |
+| TC-13a.3 | Borrower/Lenders list is built from documents, not SSIs | Any Deal Room member | View a dashboard tile for a deal with a Lenders-folder document naming a party that has no extracted Standing Instruction yet | That party's name still appears in the tile's Lenders row (reuses `_parties_for_folder` from `funding_document.py` — same "a document proves participation even without an SSI" rule FR-13 already uses) |
+| TC-13a.4 | Party list renders stacked and right-aligned | Any Deal Room member | View a dashboard tile for a deal with multiple borrowers or lenders | Each name renders on its own line, right-aligned under the row label (verified live: "Mention Test Deal" showing 6 stacked lender lines) — not a comma-joined single line |
+| TC-13a.5 | Party list collapses past 9 names | Any Deal Room member | View a dashboard tile for a deal with more than 9 borrowers or lenders in one folder | Row shows a single "…" instead of listing all names or truncating with a count |
+| TC-13a.6 | Status pill right-aligned in the card header | Any Deal Room member | View a dashboard tile's header meta row | The product type tag sits left, the green status pill sits right (`.deal-card-meta` uses `justify-content: space-between`), not both left-aligned together |
+
+## FR-13b — Dashboard To-Do Banner
+
+| ID | Scenario | Role | Steps | Expected |
+|---|---|---|---|---|
+| TC-13b.1 | Checker sees a to-do banner on login | Checker with pending Standing Instructions across multiple deals | Log in and land on the Deals dashboard | An amber banner above the deal list shows the total pending count and one clickable pill per deal with its own count (verified live: Chen — "15 Standing Instructions awaiting your review", broken down 3 / 11 / 1 across three real deals) |
+| TC-13b.2 | Banner pill opens the right deal | Checker | Click one of the banner's per-deal pills | Navigates directly into that deal's Deal Room (verified live via Playwright: clicking the SomDeal2026 pill navigated to `/deals/1`) |
+| TC-13b.3 | No pending work, no banner | Checker with zero `pending_checker_review` Standing Instructions anywhere | Log in and land on the Deals dashboard | No banner renders — not an empty/zero-state banner, nothing at all |
+| TC-13b.4 | Role with no task type sees no banner | Deal Team, Ops Manager, Ops Team Member | Log in and land on the Deals dashboard | No banner renders, regardless of how many Standing Instructions are pending elsewhere — `pending_task_count` is 0 for every deal for these roles (verified live: Dana sees no banner) |
+| TC-13b.5 | Per-tile badge shows a real count, not just an icon | Checker | View a dashboard tile for a deal with pending Standing Instructions | The task badge on the tile carries a small numeral showing the exact pending count, matching the banner's per-deal pill for that same deal |
 
 ## FR-14 — Remittance
 
@@ -162,6 +182,33 @@ TC-14.1–14.5 are verifiable today against the readiness *display* in the Remit
 | TC-14.6 | Remittance amount matches the Fund Flow Document | Ops Team Member | View the amount shown for an enabled remittance | Amount matches what FR-13's Fund Flow Document states for that party, not a value from elsewhere |
 | TC-14.7 | Blocked remittance attempt is logged as blocked, not silently ignored | Ops Team Member | Attempt to execute a remittance that is currently disabled | Action is refused with a clear reason (Standing Instruction not yet validated); attempt is not silently dropped |
 | TC-14.8 | Executed remittance is logged | Ops Team Member | Execute an enabled remittance | Action is logged per FR-7 (who, when, party, amount) |
+
+## FR-15 — Ops Manager Pending Approvals Oversight
+
+| ID | Scenario | Role | Steps | Expected |
+|---|---|---|---|---|
+| TC-15.1 | Ops Manager sees every pending approval, across every deal | Ops Manager | Log in and view the Deals dashboard | A table lists every `pending_checker_review` Standing Instruction system-wide (not just deals the Ops Manager is an explicit member of), each row showing deal, party, folder, assigned Checker(s), submitted date, and age (verified live: Omar saw 15 rows spanning 3 different deals) |
+| TC-15.2 | Non-Ops-Manager blocked | Deal Team, Ops Team Member, Checker | Call `GET /admin/pending-approvals` directly | 403 (verified live: Chen got 403) |
+| TC-15.3 | Rows sorted oldest-first | Ops Manager | View the approvals table | The longest-pending item is the first row, not the most recently submitted one |
+| TC-15.4 | Row background turns red past 8 hours pending | Ops Manager | View a row whose Standing Instruction has been `pending_checker_review` for more than 8 hours | Row renders with a red background and red age text (verified live against real aged data, all >13h) |
+| TC-15.5 | Row background turns orange between 4 and 8 hours | Ops Manager | View a row pending between 4 and 8 hours | Row renders with an orange background and orange age text (verified live by temporarily backdating one Standing Instruction's `submitted_at` to 6 hours ago, then reverting it) |
+| TC-15.6 | Row stays plain under 4 hours | Ops Manager | View a row pending less than 4 hours | Row renders with no urgency background (verified live by temporarily backdating one Standing Instruction's `submitted_at` to 2 hours ago, then reverting it) |
+| TC-15.7 | Clicking a row opens the right deal | Ops Manager | Click any row in the approvals table | Navigates directly into that Standing Instruction's Deal Room, where the Ops Manager can `@mention` another Checker to add them (the existing FR-4 flow) |
+| TC-15.8 | Checker-less deal shows its fallback assignee, not bare "Unassigned" | Ops Manager | View a row whose Standing Instruction was created while the deal had no Checker member | Checker(s) column reads the fallback Ops Manager's name (e.g. "Omar (Ops Manager)") rather than an empty cell — see FR-15's fallback-assignment note. A Standing Instruction predating this feature (created before `assigned_checker` existed, still no real Checker on the deal) still reads "Unassigned," since the field is only ever stamped at creation time |
+| TC-15.9 | Panel absent for non-Ops-Manager roles | Deal Team, Ops Team Member, Checker | Log in and view the Deals dashboard | No approvals table renders — this is Ops-Manager-only oversight, distinct from the Checker's own personal to-do banner (FR-13b) |
+| TC-15.10 | New Standing Instruction in a Checker-less deal is stamped with a fallback assignee | Deal Team Member | Upload a document that extracts to a Standing Instruction, in a deal with no Checker member | The new SSI's `assigned_checker` is the deal's Ops Manager; the agent's chat message reads "Awaiting review by {name} — no Checker is on this deal yet." instead of "Awaiting Checker validation." (verified live: uploading into "Riverside Logistics Loan," which has no Checker member, produced an SSI assigned to Omar with the correct chat wording) |
+| TC-15.11 | Real Checker present means no fallback stamp | Deal Team Member | Upload a document that extracts to a Standing Instruction, in a deal that already has a Checker member | The new SSI's `assigned_checker` is null; the agent's chat message reads "Awaiting Checker validation." unchanged |
+| TC-15.12 | Fallback assignment is not a permission grant | Ops Manager assigned as fallback | Attempt to call the validate endpoint for a Standing Instruction assigned to them | Still 403 — only a `checker`-role user may validate, regardless of `assigned_checker` |
+| TC-15.13 | Assigned-to row visible on the SSI detail view | Any Deal Room member | Open the detail view of a Standing Instruction with a fallback `assigned_checker` set | An "Assigned to" row shows the fallback Ops Manager's name; absent entirely for SSIs with no fallback assignment |
+
+## FR-16 — 3rd Party & Other Standing Instructions Tab
+
+| ID | Scenario | Role | Steps | Expected |
+|---|---|---|---|---|
+| TC-16.1 | Tab shows every non-Borrower, non-Lender SSI | Any Deal Room member | Open the "SSI — 3rd Party & Other" rail icon | Lists every Standing Instruction whose source document's folder isn't Borrower or Lenders — verified live: "Riverside Logistics Loan" showed all 4 3rd Party Providers-folder SSIs (3 pending + 1 superseded) under this tab |
+| TC-16.2 | Rail badge shows pending count for this tab specifically | Any Deal Room member | View the rail icon without opening it | A red badge shows the count of `pending_checker_review` SSIs in this tab's scope only, independent of the Borrower/Lender tabs' own badges |
+| TC-16.3 | Tab visible to every role | Deal Team, Ops Manager, Ops Team Member, Checker | Open any Deal Room | The "SSI — 3rd Party & Other" icon is present for all of them, same as the Borrower/Lender icons — unlike the role-gated Remittances icons |
+| TC-16.4 | Detail view, evidence, and blind re-entry validation work identically to the other two tabs | Checker | Open a Standing Instruction from this tab and validate it | Same masked re-entry flow as Borrower/Lender SSIs — no separate code path |
 
 ## Deployment Model & Multi-Product Support
 

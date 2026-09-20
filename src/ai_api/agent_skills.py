@@ -9,9 +9,16 @@ def describe_deal(deal: dict) -> str:
     product_label = deal["product_type"].replace("_", " ").title()
     ssis = deal.get("standing_instructions", [])
     pending = sum(1 for s in ssis if s["status"] == "pending_checker_review")
+    # Same document-derived names the Fund Flow Document itself lists (see
+    # build_deal_context's borrower_names/lender_names) — real once a
+    # document names the party, not gated on a fresh Standing Instruction.
+    borrower_names = deal.get("borrower_names", [])
+    lender_names = deal.get("lender_names", [])
     return (
         f"{deal['title']} ({deal['reference']})\n"
         f"Product: {product_label}\n"
+        f"Borrower: {', '.join(borrower_names) if borrower_names else 'None on file'}\n"
+        f"Lenders: {', '.join(lender_names) if lender_names else 'None on file'}\n"
         f"Status: {deal['status']}\n"
         f"Members: {deal['member_count']}\n"
         f"Messages so far: {deal['message_count']}\n"
@@ -115,7 +122,7 @@ AGENT_COMMANDS = {
         # /commands (the frontend's autocomplete) still lists it with the
         # right usage; funding_document_status() below is unreachable in
         # normal use, kept only as a harmless fallback.
-        "help": "generate-funding-document <amount> <rate> [<upfront_fee> <legal_fee>] — generate the Fund Flow Document (Deal Team only)",
+        "help": "generate-funding-document <amount> <rate> [<upfront_fee> <legal_fee> <interest_amount> <lead_agent_fee>] — generate the Fund Flow Document (Deal Team only)",
     },
 }
 
