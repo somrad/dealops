@@ -8,7 +8,7 @@ src/ai_api/venv/
 src/backend/dealops.db
 
 # Uploaded documents — runtime data, not source
-src/backend/storage/
+# src/backend/storage/
 
 # Log output — runtime, not source
 src/logs/
