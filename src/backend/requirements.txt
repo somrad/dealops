@@ -8,3 +8,4 @@ python-dotenv
 httpx
 pymupdf
 google-cloud-storage
+psycopg2-binary

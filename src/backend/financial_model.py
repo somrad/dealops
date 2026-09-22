@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from models import Deal, Document, DealFinancialLine, StandingInstruction, User
 import ai_client
+import storage_backend as storage
 
 # The ONE deal financial model — the diagram, the generated Fund Flow
 # Document, and the Remittances readiness view all read from
@@ -251,14 +252,10 @@ def sync_all_financial_lines_for_deal(db: Session, deal_id: int) -> None:
     superseded_ids = {d.supersedes_id for d in db.query(Document).filter(Document.deal_id == deal_id).all() if d.supersedes_id}
     heads = [d for d in docs if d.id not in superseded_ids]
 
-    from routes.documents import deal_storage_path
-    storage_path = deal_storage_path(deal_id)
     for doc in heads:
-        stored_path = os.path.join(storage_path, doc.stored_filename)
-        if not os.path.exists(stored_path):
+        content = storage.read_file(deal_id, doc.stored_filename)
+        if content is None:
             continue
-        with open(stored_path, "rb") as f:
-            content = f.read()
         try:
             result = ai_client.extract_deal_line_items(doc.original_filename, content, doc.content_type, doc.folder)
         except Exception:

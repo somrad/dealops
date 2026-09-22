@@ -8,7 +8,6 @@ from models import Document, Message, StandingInstruction, User, DealMember
 from schemas import MessageCreate, MessageOut
 from security import get_current_user
 from routes.deals import require_deal_membership, get_or_create_deal_agent, get_deal_members
-from routes.documents import deal_storage_path
 from funding_document import generate_funding_document, _parties_for_folder
 import ai_client
 
@@ -94,9 +93,8 @@ def handle_generate_funding_command(deal, current_user: User, agent: User, db: S
         db.commit()
         return
 
-    storage_path = deal_storage_path(deal.id)
     try:
-        generate_funding_document(db, deal, current_user, agent, storage_path)
+        generate_funding_document(db, deal, current_user, agent)
     except ValueError as e:
         db.add(Message(
             deal_id=deal.id, user_id=agent.id,

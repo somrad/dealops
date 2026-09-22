@@ -3,7 +3,6 @@ import re
 import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -17,10 +16,9 @@ import ai_client
 import mock_loan_iq
 import gcs_import
 import financial_model
+import storage_backend
 
 router = APIRouter()
-
-STORAGE_ROOT = os.path.join(os.path.dirname(__file__), "..", "storage")
 
 # The folders a document can be classified into automatically, plus "Deleted"
 # — which a document only ever reaches via an explicit user move (see
@@ -39,12 +37,6 @@ def normalize_version_key(filename: str) -> str:
     stem, ext = os.path.splitext(filename)
     stem = VERSION_SUFFIX.sub("", stem).strip()
     return f"{stem.lower()}{ext.lower()}"
-
-
-def deal_storage_path(deal_id: int) -> str:
-    path = os.path.join(STORAGE_ROOT, f"deal_{deal_id}")
-    os.makedirs(path, exist_ok=True)
-    return path
 
 
 def run_extraction_pipeline(db: Session, deal_id: int, document: Document, content: bytes, content_type: str, agent: User, trigger_note: str = None) -> list:
@@ -154,13 +146,9 @@ def ingest_document(db: Session, deal_id: int, filename: str, content: bytes, co
     # the multipart upload route below, and the GCS import route. Save,
     # classify, version-link, log, extract: identical treatment regardless
     # of where the bytes came from.
-    folder_path = deal_storage_path(deal_id)
     extension = os.path.splitext(filename)[1]
     stored_filename = f"{uuid.uuid4().hex}{extension}"
-    stored_path = os.path.join(folder_path, stored_filename)
-
-    with open(stored_path, "wb") as f:
-        f.write(content)
+    storage_backend.write_file(deal_id, stored_filename, content)
 
     classification = ai_client.classify_document(filename, content, content_type)
     folder = classification["folder"]
@@ -351,10 +339,8 @@ def move_document(
     if not is_delete:
         already_extracted = db.query(StandingInstruction).filter(StandingInstruction.document_id == document.id).first()
         if already_extracted is None:
-            stored_path = os.path.join(deal_storage_path(deal_id), document.stored_filename)
-            if os.path.exists(stored_path):
-                with open(stored_path, "rb") as f:
-                    content = f.read()
+            content = storage_backend.read_file(deal_id, document.stored_filename)
+            if content is not None:
                 run_extraction_pipeline(
                     db, deal_id, document, content, document.content_type, agent,
                     trigger_note=f"re-triggered after move to {new_folder}",
@@ -378,9 +364,10 @@ def compare_documents(
         raise HTTPException(status_code=404, detail="Both documents must exist in this deal")
 
     first, second = by_id[doc_a], by_id[doc_b]
-    storage = deal_storage_path(deal_id)
-    text_a = extract_text_for_diff(os.path.join(storage, first.stored_filename), first.content_type)
-    text_b = extract_text_for_diff(os.path.join(storage, second.stored_filename), second.content_type)
+    content_a = storage_backend.read_file(deal_id, first.stored_filename)
+    content_b = storage_backend.read_file(deal_id, second.stored_filename)
+    text_a = extract_text_for_diff(content_a, first.content_type, first.stored_filename)
+    text_b = extract_text_for_diff(content_b, second.content_type, second.stored_filename)
 
     return {
         "document_a": first,
@@ -396,8 +383,12 @@ def download_document(deal_id: int, document_id: int, current_user: User = Depen
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    stored_path = os.path.join(deal_storage_path(deal_id), document.stored_filename)
-    if not os.path.exists(stored_path):
+    content = storage_backend.read_file(deal_id, document.stored_filename)
+    if content is None:
         raise HTTPException(status_code=404, detail="File missing from storage")
 
-    return FileResponse(stored_path, filename=document.original_filename, media_type=document.content_type)
+    return Response(
+        content=content,
+        media_type=document.content_type or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{document.original_filename}"'},
+    )

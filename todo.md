@@ -1,3 +1,17 @@
+
+
+
+
+Welcome User in bold - You have 2 active Deals
+
++ New Deal button should only come for Deal Team member and Deal Admin
+
+Chat box focus should be positioned at bottom when loading 
+
+Left menu icons should be very slightly bigger and have small text at bottom like Borrower SSI, Lender SSI, etc..
+
+Only Ops Manager can mark a deal as closed by using “/close” to close a deal - in the dashboard show a toggle for show closed deals - by default only open deals will be shown
+
 1. Checker train icon
 2. Error chat messages by the bot should have red color - Done
 3. Open chats and tasks in the deal box 

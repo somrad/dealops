@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from models import Deal, Document, Message, DealFinancialLine, User
 from activity import log_activity
 import financial_model
+import storage_backend
 
 # FR-13: the Fund Flow / Settlement and Closing Document. Generation is
 # deterministic (assembled from the deal's financial model, not an LLM call
@@ -185,7 +186,7 @@ def _draw_funding_document_pdf(db: Session, deal: Deal, product_label: str, mode
     return doc.tobytes()
 
 
-def generate_funding_document(db: Session, deal: Deal, current_user: User, agent: User, storage_path: str) -> Document:
+def generate_funding_document(db: Session, deal: Deal, current_user: User, agent: User) -> Document:
     # No loan-economics arguments anymore - this reads the deal's financial
     # model directly (financial_model.get_deal_financial_model()). Raises
     # ValueError, caught by the route as a 400, if the model isn't complete
@@ -211,8 +212,7 @@ def generate_funding_document(db: Session, deal: Deal, current_user: User, agent
     pdf_bytes = _draw_funding_document_pdf(db, deal, deal.product_type, model, currency)
 
     stored_filename = f"{uuid.uuid4().hex}.pdf"
-    with open(os.path.join(storage_path, stored_filename), "wb") as f:
-        f.write(pdf_bytes)
+    storage_backend.write_file(deal.id, stored_filename, pdf_bytes)
 
     # FR-6 applies here too: regenerating (or replacing via upload) isn't a
     # new, unrelated document - it's a new version of whichever one this

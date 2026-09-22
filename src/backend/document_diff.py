@@ -1,4 +1,3 @@
-import os
 import difflib
 from itertools import zip_longest
 import pymupdf as fitz
@@ -7,15 +6,16 @@ import pymupdf as fitz
 # backend rather than ai_api, same boundary reasoning as pdf_highlight.py.
 
 
-def extract_text_for_diff(stored_path: str, content_type: str) -> str:
-    if not os.path.exists(stored_path):
+def extract_text_for_diff(content: bytes, content_type: str, filename: str = "") -> str:
+    # Works from bytes, not a filesystem path — storage_backend.py may be
+    # reading these from GCS, where there's no local path to hand PyMuPDF.
+    if content is None:
         return ""
-    is_pdf = content_type == "application/pdf" or stored_path.lower().endswith(".pdf")
+    is_pdf = content_type == "application/pdf" or filename.lower().endswith(".pdf")
     if is_pdf:
-        doc = fitz.open(stored_path)
+        doc = fitz.open(stream=content, filetype="pdf")
         return "\n".join(page.get_text() for page in doc)
-    with open(stored_path, "rb") as f:
-        return f.read().decode("utf-8", errors="ignore")
+    return content.decode("utf-8", errors="ignore")
 
 
 def _inline_diff(a: str, b: str):

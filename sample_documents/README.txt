@@ -65,6 +65,34 @@ Deal 4: commercial_loan_riverside_logistics/
     resulting Standing Instruction gets routed to the deal's Ops Manager
     (Omar) for oversight instead of sitting unassigned.
 
+Deal 5: commercial_loan_tillamook_cheese/
+  - A full document set for a new commercial loan demo, "Tillamook Valley
+    Creamery Co." (Oregon) — no matching deal exists in the app's seed
+    data yet; create one through the UI with Deal Reference CL-2026-0300
+    (matching every document's own header field) so it reads as authentic
+    once uploaded.
+      borrower/borrower_loan_agreement.pdf — Tillamook Valley Creamery
+        Co., a USD 18,500,000 facility funding a cheddar production and
+        cold-storage expansion at the borrower's Tillamook, OR site.
+      lenders/lender_wire_instructions.pdf — two syndicated lenders,
+        Cascade Ag Credit Partners (60%, USD 11,100,000) and Willamette
+        Valley Bank & Trust (40%, USD 7,400,000), summing to the full
+        facility amount.
+      third_party_providers/legal_fee_statement_marsh_kellerman.pdf — a
+        law firm's structuring/corporate advisory fee statement (Marsh &
+        Kellerman LLP, Portland, OR), USD 248,850 across 4 fee categories.
+      third_party_providers/equipment_appraisal_invoice.pdf — a genuinely
+        different kind of 3rd party from the legal-advisor pattern used
+        in every other sample deal so far: a machinery/equipment
+        appraiser (Pacific Crest Industrial Appraisal Group, Salem, OR)
+        valuing the creamery's processing and cold-storage equipment as
+        loan collateral, USD 47,950 across 3 fee categories.
+    Once both 3rd-party documents and the borrower/lender documents are
+    uploaded, the deal's derived borrower net proceeds (FR-13c) should
+    come out to USD 18,203,200.00 (USD 18,500,000 facility minus the two
+    3rd-party fee totals) — a real number to sanity-check the demo
+    against, not just eyeballing that "it looks about right."
+
 How to use these:
   Drag any of these .pdf files into a Deal Room in the dealops app to
   simulate a real document upload, and see auto-foldering (FR-3), the

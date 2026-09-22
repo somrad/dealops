@@ -1,7 +1,11 @@
 // Local dev talks to the backend directly; a deployed build sets
-// VITE_API_BASE=/api at build time so requests go same-origin through the
-// reverse proxy instead (see the VM's Caddyfile) — no CORS involved either way.
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+// Local dev leaves VITE_API_BASE unset and talks to the backend directly.
+// A deployed build sets it at build time — the VM's Caddy setup uses "/api"
+// (stripped by the reverse proxy); Cloud Run serves frontend+backend from
+// the same container with no path prefix at all, so it's set to "" there —
+// `??` (not `||`) so that an intentionally empty string isn't treated the
+// same as "not set" and doesn't fall through to the localhost default.
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 function getToken() {
   return localStorage.getItem("token");

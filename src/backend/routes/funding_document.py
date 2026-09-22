@@ -10,11 +10,12 @@ from schemas import (
 )
 from security import get_current_user
 from routes.deals import require_deal_membership, get_or_create_deal_agent
-from routes.documents import deal_storage_path, run_extraction_pipeline
+from routes.documents import run_extraction_pipeline
 import ai_client
 from activity import log_activity
 from funding_document import generate_funding_document, get_remittance_readiness, build_diagram_data
 import financial_model
+import storage_backend
 
 router = APIRouter()
 
@@ -94,10 +95,9 @@ def generate(
     deal = require_deal_membership(deal_id, current_user, db)
     require_deal_team(current_user)
     agent = get_or_create_deal_agent(deal, db)
-    storage_path = deal_storage_path(deal_id)
 
     try:
-        generate_funding_document(db, deal, current_user, agent, storage_path)
+        generate_funding_document(db, deal, current_user, agent)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -122,13 +122,11 @@ def upload(
     deal = require_deal_membership(deal_id, current_user, db)
     require_deal_team(current_user)
     agent = get_or_create_deal_agent(deal, db)
-    storage_path = deal_storage_path(deal_id)
 
     content = file.file.read()
     extension = os.path.splitext(file.filename)[1]
     stored_filename = f"{uuid.uuid4().hex}{extension}"
-    with open(os.path.join(storage_path, stored_filename), "wb") as f:
-        f.write(content)
+    storage_backend.write_file(deal_id, stored_filename, content)
 
     classification = ai_client.classify_document(file.filename, content, file.content_type)
     folder = classification["folder"]

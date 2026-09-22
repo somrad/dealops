@@ -1,4 +1,3 @@
-import os
 from typing import List
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -9,8 +8,8 @@ from models import Deal, Document, Message, StandingInstruction, User
 from schemas import PendingApprovalOut, StandingInstructionOut, StandingInstructionValidateRequest, StandingInstructionValidateResponse
 from security import get_current_user
 from routes.deals import require_deal_membership, get_or_create_deal_agent, get_deal_members
-from routes.documents import deal_storage_path
 from pdf_highlight import highlight_terms_in_pdf
+import storage_backend
 
 router = APIRouter()
 
@@ -132,12 +131,9 @@ def get_highlighted_document(
     document = ssi.document
     if document is None:
         raise HTTPException(status_code=404, detail="Source document no longer available")
-    stored_path = os.path.join(deal_storage_path(deal_id), document.stored_filename)
-    if not os.path.exists(stored_path):
+    original_bytes = storage_backend.read_file(deal_id, document.stored_filename)
+    if original_bytes is None:
         raise HTTPException(status_code=404, detail="File missing from storage")
-
-    with open(stored_path, "rb") as f:
-        original_bytes = f.read()
 
     if document.content_type != "application/pdf" and not document.stored_filename.lower().endswith(".pdf"):
         # Highlighting only understands PDF text search today — anything else
