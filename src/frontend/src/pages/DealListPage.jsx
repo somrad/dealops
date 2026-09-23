@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FaPlus, FaBuilding, FaIndustry, FaHome, FaInbox, FaThLarge, FaListUl, FaTasks, FaAt, FaUserShield } from "react-icons/fa";
-import { listDeals, createDeal, listPendingApprovals } from "../api";
+import { FaPlus, FaBuilding, FaIndustry, FaHome, FaInbox, FaThLarge, FaListUl, FaTasks, FaAt, FaUserShield, FaUserPlus } from "react-icons/fa";
+import { listDeals, createDeal, listPendingApprovals, listUsers, addDealMembers } from "../api";
 import Modal from "../components/Modal";
 import Avatar from "../components/Avatar";
 
@@ -53,6 +53,99 @@ function DealBadges({ deal }) {
   );
 }
 
+// The +person icon on every dashboard tile — stops the card's own onClick
+// (which navigates into the Deal Room) from firing when you're just trying
+// to open the picker.
+function AddMemberButton({ onClick, className = "" }) {
+  return (
+    <button
+      type="button"
+      className={`add-member-btn ${className}`}
+      title="Add members to this deal"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      <FaUserPlus />
+    </button>
+  );
+}
+
+// Direct add-to-deal picker — no @mention, no Ops Manager gate (the founder's
+// explicit ask: "we dont need Omar to add deal members and require
+// additional chatting"). Filters out whoever's already a member and the
+// deal's own agent (never a real staffable person).
+function AddMembersModal({ deal, onClose, onAdded }) {
+  const [allUsers, setAllUsers] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    listUsers().then((users) => {
+      setAllUsers(users);
+      setLoading(false);
+    });
+  }, []);
+
+  const existingIds = new Set(deal.members.map((m) => m.id));
+  const candidates = allUsers.filter((u) => !existingIds.has(u.id));
+
+  function toggle(userId) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  async function handleSubmit() {
+    if (selected.size === 0) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      await addDealMembers(deal.id, Array.from(selected));
+      onAdded();
+      onClose();
+    } catch (e) {
+      setError(e.message);
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Modal title={`Add members to ${deal.title}`} onClose={onClose}>
+      {loading ? (
+        <p className="muted">Loading users...</p>
+      ) : candidates.length === 0 ? (
+        <p className="muted">Everyone's already in this deal.</p>
+      ) : (
+        <div className="member-picker-list">
+          {candidates.map((u) => (
+            <label key={u.id} className="member-picker-item">
+              <input type="checkbox" checked={selected.has(u.id)} onChange={() => toggle(u.id)} />
+              <Avatar name={u.name} size={30} role={u.role} />
+              <div className="mention-item-info">
+                <strong>{u.name}</strong>
+                <span className="muted small">{u.role.replace("_", " ")}</span>
+              </div>
+            </label>
+          ))}
+        </div>
+      )}
+      {error && (
+        <p className="muted small" style={{ color: "var(--color-red, #dc2626)" }}>{error}</p>
+      )}
+      <button type="button" onClick={handleSubmit} disabled={submitting || selected.size === 0}>
+        <FaUserPlus /> Add {selected.size > 0 ? selected.size : ""} member{selected.size === 1 ? "" : "s"}
+      </button>
+    </Modal>
+  );
+}
+
 // Dashboard-level "what do I need to do right now" summary — surfaces every
 // deal's pending_task_count (today, only ever a Checker's pending Standing
 // Instruction reviews) as a real to-do list on login, not just a per-tile
@@ -94,7 +187,7 @@ function TodoBanner({ deals, onOpenDeal }) {
 // dropped as not needed on the dashboard tile itself) — member avatars
 // pinned to the bottom of the tile regardless of how tall the lists above
 // are.
-function DealSections({ deal, productLabel }) {
+function DealSections({ deal, productLabel, onAddMember }) {
   return (
     <div className="deal-map-mini">
       <div className="sidebar-row">
@@ -113,6 +206,7 @@ function DealSections({ deal, productLabel }) {
         {deal.members.map((m) => (
           <Avatar key={m.id} name={m.name} size={26} role={m.role} />
         ))}
+        <AddMemberButton onClick={onAddMember} className="add-member-btn-avatar" />
       </div>
     </div>
   );
@@ -208,6 +302,7 @@ function DealListPage({ user }) {
   const [title, setTitle] = useState("");
   const [productType, setProductType] = useState("commercial_loan");
   const [viewMode, setViewMode] = useState("grid"); // "grid" (vertical cards) or "bars" (horizontal list)
+  const [addMemberDeal, setAddMemberDeal] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -308,7 +403,7 @@ function DealListPage({ user }) {
                   <span className="tag">{meta.label}</span>
                   <span className={`status-pill status-${deal.status}`}>{deal.status}</span>
                 </div>
-                <DealSections deal={deal} productLabel={meta.label} />
+                <DealSections deal={deal} productLabel={meta.label} onAddMember={() => setAddMemberDeal(deal)} />
               </div>
             );
           })}
@@ -333,12 +428,20 @@ function DealListPage({ user }) {
                     </div>
                   </div>
                 </div>
-                <DealSections deal={deal} productLabel={meta.label} />
+                <DealSections deal={deal} productLabel={meta.label} onAddMember={() => setAddMemberDeal(deal)} />
                 <DealBadges deal={deal} />
               </div>
             );
           })}
         </div>
+      )}
+
+      {addMemberDeal && (
+        <AddMembersModal
+          deal={addMemberDeal}
+          onClose={() => setAddMemberDeal(null)}
+          onAdded={refresh}
+        />
       )}
 
       {showModal && (

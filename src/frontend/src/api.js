@@ -75,6 +75,13 @@ export function listDealMembers(dealId) {
   return apiRequest(`/deals/${dealId}/members`);
 }
 
+export function addDealMembers(dealId, userIds) {
+  return apiRequest(`/deals/${dealId}/members`, {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds }),
+  });
+}
+
 export function listAgentCommands() {
   return apiRequest("/agent-commands");
 }

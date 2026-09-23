@@ -29,6 +29,10 @@ class DealCreate(BaseModel):
     product_type: str
 
 
+class AddMembersRequest(BaseModel):
+    user_ids: List[int]
+
+
 class DealOut(BaseModel):
     id: int
     reference: str

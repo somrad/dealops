@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Deal, DealMember, DealView, Document, Message, StandingInstruction, User
-from schemas import DealCreate, DealOut, UserOut
+from schemas import AddMembersRequest, DealCreate, DealOut, UserOut
 from security import get_current_user, hash_password
 from activity import log_activity
 from funding_document import _parties_for_folder
@@ -62,6 +62,46 @@ def get_deal_members(deal_id: int, db: Session) -> List[User]:
         combined[agent.id] = agent
 
     return list(combined.values())
+
+
+class DealMembershipManager:
+    """Adds users straight to a Deal Room from the dashboard's +person
+    picker — deliberately not gated to Ops Managers the way the chat
+    @mention flow is (see CLAUDE.md FR-4); that flow is untouched and
+    still works exactly as before."""
+
+    def __init__(self, db: Session, deal: Deal):
+        self.db = db
+        self.deal = deal
+
+    def add_users(self, user_ids: List[int], added_by: User) -> List[User]:
+        agent = get_or_create_deal_agent(self.deal, self.db)
+        added: List[User] = []
+
+        for user_id in user_ids:
+            user = self.db.query(User).filter(User.id == user_id).first()
+            if user is None or user.role == "agent":
+                continue
+
+            already_member = self.db.query(DealMember).filter(
+                DealMember.deal_id == self.deal.id, DealMember.user_id == user.id
+            ).first()
+            if already_member is not None:
+                continue
+
+            self.db.add(DealMember(deal_id=self.deal.id, user_id=user.id))
+            self.db.commit()
+
+            self.db.add(Message(
+                deal_id=self.deal.id,
+                user_id=agent.id,
+                text=f"{user.name} was added to this deal by {added_by.name}.",
+                level="success",
+            ))
+            self.db.commit()
+            added.append(user)
+
+        return added
 
 
 def get_fallback_ssi_assignee(deal_id: int, db: Session):
@@ -226,4 +266,16 @@ def get_deal(deal_id: int, current_user: User = Depends(get_current_user), db: S
 @router.get("/deals/{deal_id}/members", response_model=List[UserOut])
 def list_deal_members(deal_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     require_deal_membership(deal_id, current_user, db)
+    return get_deal_members(deal_id, db)
+
+
+@router.post("/deals/{deal_id}/members", response_model=List[UserOut])
+def add_deal_members(
+    deal_id: int,
+    payload: AddMembersRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    deal = require_deal_membership(deal_id, current_user, db)
+    DealMembershipManager(db, deal).add_users(payload.user_ids, current_user)
     return get_deal_members(deal_id, db)
